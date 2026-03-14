@@ -44,6 +44,7 @@ class AgendaItem(BaseModel):
     recommendations: Optional[str] = Field(default=None, description="Proposed recommendations text.")
     pdf_links: list[HttpUrl] = Field(default_factory=list, description="Links to attached PDFs (staff reports, etc).")
     parsed_pdf_text: Optional[str] = Field(default=None, description="Extracted text from attached PDFs using PyMuPDF.")
+    source_meeting_url: Optional[HttpUrl] = Field(default=None, description="URL to the full meeting page on TMMIS.")
     
     # --- Phase 3: AI Intelligence ---
     ai_summary: Optional[str] = Field(default=None, description="AI-generated concise summary of the item.")
@@ -55,4 +56,5 @@ class Meeting(BaseModel):
     meeting_id: str = Field(..., description="The TMMIS meeting identifier.")
     committee_name: str = Field(default="", description="Name of the committee.")
     meeting_date: Optional[datetime] = Field(default=None, description="The date of the meeting.")
+    source_url: Optional[HttpUrl] = Field(default=None, description="Direct URL to the meeting page.")
     agenda_items: list[AgendaItem] = Field(default_factory=list, description="The items discussed in this meeting.")

@@ -140,7 +140,8 @@ class TMMISScraper:
                          status=item.get("itemStatus", "Proposed"),
                          summary=item.get("agendaItemSummary"),
                          recommendations=item.get("agendaItemRecommendation"),
-                         pdf_links=pdf_links
+                         pdf_links=pdf_links,
+                         source_meeting_url=f"https://secure.toronto.ca/council/agenda-item.do?item={item.get('reference')}"
                      )
                      
                      # Extract PDF text if links exist

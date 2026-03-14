@@ -6,17 +6,29 @@ logger = logging.getLogger(__name__)
 
 # Keywords that signal high citizen-impact topics
 HIGH_IMPACT_KEYWORDS = [
-    "housing", "rent", "tenant", "eviction", "landlord", "slumlord",
-    "tax", "property tax", "budget", "levy", "fee",
-    "transit", "ttc", "bus", "streetcar", "subway", "fare",
-    "zoning", "development", "condo", "tower", "densification",
-    "shelter", "homeless", "encampment",
-    "police", "safety", "crime", "gun",
-    "water", "sewage", "infrastructure", "pothole", "road",
-    "childcare", "daycare", "school",
-    "park", "recreation", "community centre",
+    "housing", "rent", "tenant", "eviction", "landlord", "slumlord", "affordable", "homeless", "encampment", "shelter",
+    "tax", "property tax", "budget", "levy", "fee", "funding", "financial",
+    "transit", "ttc", "bus", "streetcar", "subway", "fare", "bike", "cycling", "lane", "road", "pothole", "construction",
+    "zoning", "development", "condo", "tower", "densification", "heritage", "planning",
+    "police", "safety", "crime", "gun", "enforcement", "tps",
+    "water", "sewage", "infrastructure", "utility", "waste", "garbage", "environment", "climate", "net zero",
+    "childcare", "daycare", "school", "youth", "senior", "library",
+    "park", "recreation", "community centre", "equity", "accessibility", "inclusion",
+    "economy", "business", "employment", "job", "bylaw", "regulation"
 ]
 
+
+# Topics that usually put people to sleep (administrative/minor)
+BORING_KEYWORDS = [
+    "variance", "minor variance", "signage", "encroachment", "front yard", "fence",
+    "item for information", "administrative", "correction", "routine", "technical"
+]
+
+# Topics that people get fired up about (boost these)
+HOT_KEYWORDS = [
+    "rent", "eviction", "property tax", "police", "ttc", "fare increase", 
+    "housing", "shelter", "homeless", "budget", "safety"
+]
 
 def score_agenda_item(item: AgendaItem) -> float:
     """
@@ -30,6 +42,16 @@ def score_agenda_item(item: AgendaItem) -> float:
     for kw in HIGH_IMPACT_KEYWORDS:
         if kw in text:
             score += 10.0
+            
+    # Hot topic boost
+    for kw in HOT_KEYWORDS:
+        if kw in text:
+            score += 20.0
+
+    # Boring penalty (unless it's a hot topic too)
+    for kw in BORING_KEYWORDS:
+        if kw in text:
+            score -= 40.0
 
     # More PDF attachments = more substance
     score += len(item.pdf_links) * 5.0
@@ -60,6 +82,9 @@ def select_top_topic(items: List[AgendaItem], top_n: int = 1) -> List[AgendaItem
 
     scored = [(item, score_agenda_item(item)) for item in items]
     scored.sort(key=lambda x: x[1], reverse=True)
+
+    for item, score in scored:
+        logger.info(f"📊 Scored Item: '{item.title[:60]}...' | Score: {score:.1f}")
 
     top_items = [item for item, score in scored[:top_n]]
 
