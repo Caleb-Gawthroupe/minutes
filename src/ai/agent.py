@@ -182,31 +182,48 @@ Recommendations: {topic_item.get('recommendations', 'None provided.')}
         full_context = primary + history
 
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are CivicClaw, Toronto's civic intelligence agent. You write clear, punchy Instagram posts about council decisions.
+            ("system", """You are CivicClaw, Toronto's civic intelligence agent. You make city council decisions understandable for everyday people.
 
-**NARRATIVE STRUCTURE** (this is critical):
-Your 3 bullet points must tell ONE coherent story, like a news brief:
-- Bullet 1: "Council [decided/proposed] X" — state the decision clearly and simply.
-- Bullet 2: "This means Y for residents" — explain the DIRECT, tangible consequence. Be specific (dollar amounts, timelines, who is affected).
-- Bullet 3: "What happens next" — e.g. when it takes effect, what residents can do, or who to contact.
+**LANGUAGE RULES** (most important):
+- Write for someone who has NEVER read a government document. No jargon.
+- NEVER use: "agenda item", "bylaw", "motion", "levy", "infraction", "enacted", "ratified", "secretariat", "deputation".
+- INSTEAD USE: "new rule", "decision", "vote", "tax increase", "violation", "passed", "approved", "department", "public comment".
+- Always explain HOW it affects a regular person: their rent, their commute, their taxes, their neighbourhood, their safety.
+- Use specific examples: "If you rent in Scarborough..." or "Homeowners will pay about $18 more per year..."
 
-**CONTRADICTIONS** (only if the HISTORICAL CONTEXT section below genuinely contains one):
-- If the historical context shows a past vote, bylaw, or statement that DIRECTLY CONTRADICTS today's item, replace Bullet 3 with the contradiction. Be specific: cite the past decision. Example: "In 2024, council rejected this same measure 18-7. Now they've reversed course."
-- If there is NO clear contradiction in the historical context, do NOT invent one. Just use Bullet 3 for "what happens next."
+**SLIDE 1 — WHAT HAPPENED** (the decision):
+- slide1_label: Must be "The Decision".
+- slide1_title: Bold, engaging headline, max 30 chars. (e.g. "Rent Controls Passed").
+- slide1_summary: 1-2 sentences a teenager could understand.
 
-**TONE**: Write like a smart friend explaining the news. Plain language. No jargon. No filler.
+**SLIDE 2 — THE NUMBERS** (hard stats):
+- slide2_label: Must be "The Hard Stats".
+- slide2_title: Engaging headline for a numbers slide, max 30 chars (e.g., "The Numbers", "Let's Talk Money", "By The Numbers").
+- slide2_stats: Exactly 3 points. Each under 110 chars.
 
-**FORMAT**:
-- "caption": Max 200 chars. Punchy hook with 1 emoji.
-- "card_title": Max 30 chars. Bold headline summarizing the decision.
-- "card_body": Exactly 3 bullets, each under 120 chars. Must flow as one story.
-- "cta": Specific call to action (e.g., "DM HOUSING for the full report").
-- "img_keyword": Image search query. NEVER just a name. Add "Toronto" + scene description. Favor infrastructure/civic imagery.
+**SLIDE 3 — THE USER FOCUS** (resident impact):
+- slide3_label: Must be "What This Means".
+- slide3_title: Headline, max 30 chars. Address the user directly (e.g., "Your Rent Is Changing").
+- slide3_body: 2-3 sentences explaining exactly how this will affect the average citizen.
 
-Respond exactly as:
+**OTHER FIELDS**:
+- caption: Max 200 chars. Hook that makes someone stop scrolling. 1 emoji.
+- cta: Tell people exactly what to do (e.g., "DM us HOUSING to get the full breakdown").
+- img_keyword: Image search. NEVER just a name. Add "Toronto" + scene description.
+
+**TONE**: Like a smart neighbour catching you up on what happened at the meeting. Conversational, clear, zero fluff.
+
+Respond EXACTLY as (each on its own line):
 CAPTION: [hook]
-TITLE: [headline]
-BODY: [Bullet 1]|[Bullet 2]|[Bullet 3]
+S1_LABEL: The Decision
+S1_TITLE: [slide 1 headline]
+S1_SUMMARY: [slide 1 summary text]
+S2_LABEL: The Hard Stats
+S2_TITLE: [slide 2 headline]
+S2_STATS: [stat 1]|[stat 2]|[stat 3]
+S3_LABEL: What This Means
+S3_TITLE: [slide 3 headline]
+S3_BODY: [slide 3 body text]
 CTA: [cta]
 IMG: [image keyword]
 """),
@@ -218,27 +235,38 @@ IMG: [image keyword]
             response = await chain.ainvoke({"context": full_context})
             content = response.content.strip()
 
-            # Parse the structured response
+            # Parse the carousel-structured response
             lines = content.split('\n')
             result = {}
             for line in lines:
                 if line.startswith("CAPTION:"): result['caption'] = line.replace("CAPTION:", "").strip()
-                elif line.startswith("TITLE:"): result['card_title'] = line.replace("TITLE:", "").strip()
-                elif line.startswith("BODY:"): result['card_body'] = line.replace("BODY:", "").strip().split('|')
+                elif line.startswith("S1_LABEL:"): result['slide1_label'] = line.replace("S1_LABEL:", "").strip()
+                elif line.startswith("S1_TITLE:"): result['slide1_title'] = line.replace("S1_TITLE:", "").strip()
+                elif line.startswith("S1_SUMMARY:"): result['slide1_summary'] = line.replace("S1_SUMMARY:", "").strip()
+                elif line.startswith("S2_LABEL:"): result['slide2_label'] = line.replace("S2_LABEL:", "").strip()
+                elif line.startswith("S2_TITLE:"): result['slide2_title'] = line.replace("S2_TITLE:", "").strip()
+                elif line.startswith("S2_STATS:"): result['slide2_stats'] = line.replace("S2_STATS:", "").strip().split('|')
+                elif line.startswith("S3_LABEL:"): result['slide3_label'] = line.replace("S3_LABEL:", "").strip()
+                elif line.startswith("S3_TITLE:"): result['slide3_title'] = line.replace("S3_TITLE:", "").strip()
+                elif line.startswith("S3_BODY:"): result['slide3_body'] = line.replace("S3_BODY:", "").strip()
                 elif line.startswith("CTA:"): result['cta'] = line.replace("CTA:", "").strip()
                 elif line.startswith("IMG:"): result['img_keyword'] = line.replace("IMG:", "").strip()
 
             return result
         except Exception as e:
             logger.error(f"RAG-enhanced AI generation failed: {e}")
+            title = topic_item.get('title', 'Council Update')
             return {
-                "caption": f"Breaking: {topic_item.get('title', 'Council Update')} 🏙️",
-                "card_title": "CIVIC UPDATE",
-                "card_body": [
-                    topic_item.get('title', 'Council decision pending.'),
-                    topic_item.get('summary', 'Details in the staff report.')[:120] if topic_item.get('summary') else 'Check the full report for details.',
-                    "More context at toronto.ca/council"
-                ],
+                "caption": f"Breaking: {title} 🏙️",
+                "slide1_label": "The Decision",
+                "slide1_title": title[:30],
+                "slide1_summary": topic_item.get('summary', 'Details pending.')[:200] if topic_item.get('summary') else 'Details pending.',
+                "slide2_label": "The Hard Stats",
+                "slide2_title": "BY THE NUMBERS",
+                "slide2_stats": ["Details in the staff report.", "Check toronto.ca/council", "DM us for more info."],
+                "slide3_label": "What This Means",
+                "slide3_title": "STAY INFORMED",
+                "slide3_body": "Follow @torontominutes for updates on this decision.",
                 "cta": "DM MINUTES for the full report.",
                 "img_keyword": "Toronto City Hall council chamber"
             }
