@@ -86,7 +86,21 @@ The project includes a GitHub Actions workflow to run the pipeline automatically
      - `IMGBB_API_KEY` (optional)
   4. The workflow will run automatically at **9:00 AM EST** daily. You can also trigger it manually from the `Actions` tab.
 
-### 2. Live API Trigger (Render / Koyeb)
+### 2. Remote Triggering (The "Ping")
+To trigger the GitHub workflow from your terminal, a script, or another app without opening the browser:
+
+- **Using `curl`**:
+  ```bash
+  # Replace <YOUR_TOKEN> with a GitHub Personal Access Token
+  # Replace <OWNER>/<REPO> with your GitHub details
+  curl -X POST \
+    -H "Accept: application/vnd.github+json" \
+    -H "Authorization: Bearer <YOUR_TOKEN>" \
+    https://api.github.com/repos/<OWNER>/<REPO>/dispatches \
+    -d '{"event_type": "ping-pipeline"}'
+  ```
+
+### 3. Live API Trigger (Render / Koyeb)
 You can trigger the pipeline on-demand using a simple API call. The project includes a **FastAPI** server for this purpose.
 
 - **Local Development**:

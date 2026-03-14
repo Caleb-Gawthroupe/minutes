@@ -38,58 +38,68 @@ class TMMISScraper:
         """Uses Playwright to handshake cookies and fetch structured JSON agendas."""
         items = []
         async with async_playwright() as p:
-             # Using headed mode to bypass WAF bot detection, intended to run under xvfb
-             browser = await p.chromium.launch(headless=False, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
+             # Force HEADLESS=false to bypass WAF detection in CI
+             is_headless = os.getenv("HEADLESS", "false").lower() == "true"
+             browser = await p.chromium.launch(
+                 headless=is_headless, 
+                 args=[
+                     "--no-sandbox", 
+                     "--disable-blink-features=AutomationControlled",
+                     "--disable-infobars",
+                     "--window-size=1280,720"
+                 ]
+             )
              context = await browser.new_context(
-                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                 viewport={"width": 1280, "height": 720}
              )
              page = await context.new_page()
              
              try:
                  logger.info(f"Navigating to {self.BASE_URL} to handshake cookies...")
                  # Go to the main page to get the XSRF-TOKEN
-                 response = await page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=30000)
+                 await page.goto(self.BASE_URL, wait_until="networkidle", timeout=30000)
                  
                  # Wait a moment for cookies to settle
-                 await asyncio.sleep(2)
+                 await asyncio.sleep(3)
                  
                  cookies = await context.cookies()
                  xsrf_token = next((c['value'] for c in cookies if c['name'] == 'XSRF-TOKEN'), None)
                  
                  if not xsrf_token:
-                     logger.warning("Failed to retrieve XSRF-TOKEN cookie. API requests may fail.")
+                      logger.warning("Failed to retrieve XSRF-TOKEN cookie. API requests may fail.")
                  else:
-                     logger.info("Successfully retrieved XSRF-TOKEN.")
+                      logger.info("Successfully retrieved XSRF-TOKEN.")
                  
-                 headers = {
-                     "Accept": "application/json, text/plain, */*",
-                     "Content-Type": "application/json",
-                     "x-xsrf-token": xsrf_token if xsrf_token else ""
-                 }
+                 logger.info("Querying TMMIS REST API for agenda items via browser evaluate...")
                  
-                 payload = {
-                     "includeTitle": True,
-                     "includeSummary": True,
-                     "includeRecommendations": True,
-                     "includeDecisions": True,
-                     "decisionBodyId": None,
-                     "meetingFromDate": None,
-                     "meetingToDate": None,
-                     "word": search_word
-                 }
-                 
-                 logger.info("Querying TMMIS REST API for agenda items...")
-                 api_response = await context.request.post(
-                     self.SEARCH_API,
-                     headers=headers,
-                     data=payload
-                 )
-                 
-                 if not api_response.ok:
-                     logger.error(f"API request failed with status: {api_response.status} {api_response.status_text}")
-                     return items
-                     
-                 data = await api_response.json()
+                 # Perform the fetch INSIDE the page context to ensure headers/cookies are perfect
+                 data = await page.evaluate(f"""
+                     async (args) => {{
+                         const response = await fetch(args.url, {{
+                             method: 'POST',
+                             headers: {{
+                                 'Accept': 'application/json, text/plain, */*',
+                                 'Content-Type': 'application/json',
+                                 'x-xsrf-token': args.token
+                             }},
+                             body: JSON.stringify({{
+                                 includeTitle: true,
+                                 includeSummary: true,
+                                 includeRecommendations: true,
+                                 includeDecisions: true,
+                                 decisionBodyId: null,
+                                 meetingFromDate: null,
+                                 meetingToDate: null,
+                                 word: args.word
+                             }})
+                         }});
+                         if (!response.ok) {{
+                             throw new Error(`API failed: ${{response.status}}`);
+                         }}
+                         return response.json();
+                     }}
+                 """, {"url": self.SEARCH_API, "token": xsrf_token if xsrf_token else "", "word": search_word})
                  
                  logger.info("Successfully received API response.")
                  
