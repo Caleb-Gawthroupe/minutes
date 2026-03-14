@@ -145,10 +145,113 @@ class CivicAIAgent:
                 "card_body": [f"Meeting: {meeting.get('title')}", f"Bylaw: {bylaw.get('title')}", f"Project: {project.get('title')}"],
                 "cta": "DM MINUTES for more."
             }
+    async def generate_deep_dive_post_async(
+        self,
+        topic_item: dict,
+        historical_context: list[dict],
+    ) -> dict:
+        """
+        RAG-enhanced post generation. Meeting-first: the topic_item is the star.
+        historical_context provides supplementary depth from the vector store.
+        """
+        logger.info(f"Generating RAG-enhanced deep-dive post for: {topic_item.get('title', 'Unknown')}")
+
+        # Build the primary context from the meeting item
+        primary = f"""
+=== TODAY'S KEY AGENDA ITEM ===
+Item Number: {topic_item.get('item_number', 'N/A')}
+Title: {topic_item.get('title', 'N/A')}
+Status: {topic_item.get('status', 'N/A')}
+Summary: {topic_item.get('summary', 'No summary available.')}
+Recommendations: {topic_item.get('recommendations', 'None provided.')}
+"""
+        # Add parsed PDF text if available (truncated for context window)
+        pdf_text = topic_item.get('parsed_pdf_text', '')
+        if pdf_text:
+            primary += f"\nStaff Report Excerpt:\n{pdf_text[:4000]}\n"
+
+        # Build the historical context section
+        history = ""
+        if historical_context:
+            history = "\n=== HISTORICAL CONTEXT (from past meetings/bylaws) ===\n"
+            for i, chunk in enumerate(historical_context[:5]):
+                source = chunk.get('metadata', {}).get('source', 'unknown')
+                doc_type = chunk.get('metadata', {}).get('doc_type', 'document')
+                history += f"\n[Past {doc_type} - {source}]:\n{chunk['text'][:800]}\n"
+
+        full_context = primary + history
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are CivicClaw, Toronto's premier civic intelligence agent.
+
+You are creating an IMAGE-CENTRIC Instagram post about a SINGLE topic from today's council meeting.
+
+**YOUR PRIORITY**: Focus entirely on the TODAY'S KEY AGENDA ITEM. The historical context is supplementary — use it to add depth, flag contradictions, or provide perspective.
+
+**CONTENT RULES**:
+- All 3 bullet points MUST be about the SAME topic — elaborate and go deeper, don't scatter.
+- Bullet 1: What is happening? (The core decision/proposal)
+- Bullet 2: How does this directly affect residents? (Money, housing, transit, safety)
+- Bullet 3: Historical context OR contradiction OR what happens next.
+- If the historical context reveals a contradiction or flip-flop, call it out in Bullet 3.
+- If no contradiction exists, use Bullet 3 for "what this means going forward."
+
+**FORMAT RULES**:
+- "caption": Max 200 chars, punchy hook. 1 emoji. Must entice people to look at the image.
+- "card_title": Bold headline, max 30 chars. Should summarize the decision.
+- "card_body": Exactly 3 bullets, each under 120 chars. All about the SAME topic.
+- "cta": Specific call to action (e.g., "DM HOUSING for the full report").
+- "img_keyword": Grounded image search query. NEVER just a person's name. Add "Toronto City Hall" or describe the scene. Favor infrastructure/civic imagery.
+
+Provide your response exactly as:
+CAPTION: [Your hook here]
+TITLE: [Your card title here]
+BODY: [Bullet 1]|[Bullet 2]|[Bullet 3]
+CTA: [Your cta here]
+IMG: [Your image keyword here]
+"""),
+            ("user", "{context}")
+        ])
+
+        try:
+            chain = prompt | self.llm
+            response = await chain.ainvoke({"context": full_context})
+            content = response.content.strip()
+
+            # Parse the structured response
+            lines = content.split('\n')
+            result = {}
+            for line in lines:
+                if line.startswith("CAPTION:"): result['caption'] = line.replace("CAPTION:", "").strip()
+                elif line.startswith("TITLE:"): result['card_title'] = line.replace("TITLE:", "").strip()
+                elif line.startswith("BODY:"): result['card_body'] = line.replace("BODY:", "").strip().split('|')
+                elif line.startswith("CTA:"): result['cta'] = line.replace("CTA:", "").strip()
+                elif line.startswith("IMG:"): result['img_keyword'] = line.replace("IMG:", "").strip()
+
+            return result
+        except Exception as e:
+            logger.error(f"RAG-enhanced AI generation failed: {e}")
+            return {
+                "caption": f"Breaking: {topic_item.get('title', 'Council Update')} 🏙️",
+                "card_title": "CIVIC UPDATE",
+                "card_body": [
+                    topic_item.get('title', 'Council decision pending.'),
+                    topic_item.get('summary', 'Details in the staff report.')[:120] if topic_item.get('summary') else 'Check the full report for details.',
+                    "More context at toronto.ca/council"
+                ],
+                "cta": "DM MINUTES for the full report.",
+                "img_keyword": "Toronto City Hall council chamber"
+            }
+
+    # --- Sync wrappers ---
 
     def generate_aggregate_post(self, meeting: dict, bylaw: dict, project: dict) -> str:
         import asyncio
         return asyncio.run(self.generate_aggregate_post_async(meeting, bylaw, project))
+
+    def generate_deep_dive_post(self, topic_item: dict, historical_context: list[dict]) -> dict:
+        import asyncio
+        return asyncio.run(self.generate_deep_dive_post_async(topic_item, historical_context))
 
     def summarize_item(self, item: AgendaItem) -> AgendaItem:
         import asyncio
