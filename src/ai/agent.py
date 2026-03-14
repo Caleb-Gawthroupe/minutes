@@ -271,6 +271,40 @@ IMG: [image keyword]
                 "img_keyword": "Toronto City Hall council chamber"
             }
 
+    async def format_user_email_async(self, topic_title: str, raw_user_message: str) -> str:
+        """Uses AI to turn a raw, informal DM into a professional email for a representative."""
+        logger.info(f"Formatting professional email for topic: {topic_title}")
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are CivicClaw, an expert in civic advocacy. Your job is to take a raw, informal message from a resident and turn it into a professional, persuasive, and respectful email to a city official.
+
+**Strict Rules**:
+1. Keep the tone professional but passionate.
+2. Maintain the core intent of the user's message.
+3. Use a clear subject line starting with "Regarding: [Topic]".
+4. Ensure the letter is structured with a Formal Salutation, Body, and Closing.
+5. If the user's message is too brief, expand it slightly with relevant civic context about the topic, but don't invent personal anecdotes.
+6. The output should be JUST the email text. No commentary.
+
+**Format**:
+Subject: [Subject]
+
+[Salutation]
+[Body]
+
+Sincerely,
+[A Concerned Resident]"""),
+            ("user", f"Topic: {topic_title}\nUser's Raw Message: {raw_user_message}")
+        ])
+
+        try:
+            chain = prompt | self.llm
+            response = await chain.ainvoke({})
+            return response.content.strip()
+        except Exception as e:
+            logger.error(f"Email formatting failed: {e}")
+            return f"Subject: Concern Regarding {topic_title}\n\nTo Whom It May Concern,\n\nI am writing to express my concern about {topic_title}. {raw_user_message}\n\nSincerely,\nA Concerned Resident"
+
     # --- Sync wrappers ---
 
     def generate_aggregate_post(self, meeting: dict, bylaw: dict, project: dict) -> str:
