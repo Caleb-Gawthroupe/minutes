@@ -2,8 +2,8 @@ name: CivicClaw DM Agent
 
 on:
   schedule:
-    # Run every 30 minutes to check for new DMs and respond
-    - cron: '*/30 * * * *'
+    # Run every 5 minutes for faster interaction
+    - cron: '*/5 * * * *'
   workflow_dispatch:
   repository_dispatch:
     types: [ping-dm-agent]

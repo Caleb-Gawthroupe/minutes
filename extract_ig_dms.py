@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 PAGE_ACCESS_TOKEN = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
-SMTP_USER = "minutesproject.dev@gmail.com"
-SMTP_PASS = os.getenv("SMTP_PASSWORD")
+SMTP_USER = os.getenv("CIVIC_EMAIL", "minutesproject.dev@gmail.com")
+SMTP_PASS = os.getenv("EMAIL_APP_PASSWORD") or os.getenv("SMTP_PASSWORD") or os.getenv("CIVIC_PASS")
 TARGET_EMAIL = "creativearush@gmail.com"
 
 # File paths
@@ -192,10 +192,12 @@ async def run_dm_listener():
         with open(STATE_FILE, "r") as f:
             state_map = json.load(f)
 
-    # 1. Get Page ID
+    # 1. Get IDs
     me_url = f"https://graph.facebook.com/v19.0/me?fields=id,instagram_business_account&access_token={PAGE_ACCESS_TOKEN}"
     me_res = requests.get(me_url).json()
     page_id = me_res.get("id")
+    insta_id = me_res.get("instagram_business_account", {}).get("id")
+    
     if not page_id:
         logger.error(f"❌ Authentication failed: {me_res}")
         return
@@ -204,19 +206,33 @@ async def run_dm_listener():
     conv_url = f"https://graph.facebook.com/v19.0/{page_id}/conversations?platform=instagram&access_token={PAGE_ACCESS_TOKEN}"
     conversations = requests.get(conv_url).json().get("data", [])
 
+    processed_msgs = state_map.get("__processed_ids", [])
+
     for conv in conversations:
         conv_id = conv["id"]
-        msg_url = f"https://graph.facebook.com/v19.0/{conv_id}/messages?fields=message,from,created_time&access_token={PAGE_ACCESS_TOKEN}"
+        msg_url = f"https://graph.facebook.com/v19.0/{conv_id}/messages?fields=message,from,created_time,id&access_token={PAGE_ACCESS_TOKEN}"
         messages = requests.get(msg_url).json().get("data", [])
         
         # Reverse to process oldest first (chronological)
         for msg in reversed(messages):
+            msg_id = msg.get("id")
             sender_id = msg.get("from", {}).get("id")
             sender_name = msg.get("from", {}).get("username", "Unknown")
             text = msg.get("message", "")
             
-            if sender_id and text:
-                await process_dm_state(sender_id, sender_name, text, history, state_map)
+            # Skip if already processed, no text, or message is from the Page/Bot itself
+            is_self = (sender_id == page_id or (insta_id and sender_id == insta_id))
+            if not sender_id or not text or is_self or msg_id in processed_msgs:
+                if is_self:
+                    logger.debug(f"Skipping self-message: {text[:20]}")
+                continue
+            
+            logger.info(f"📥 New message from {sender_name} ({sender_id}): {text[:50]}...")
+            await process_dm_state(sender_id, sender_name, text, history, state_map)
+            processed_msgs.append(msg_id)
+
+    # Keep only the last 500 processed IDs to avoid state file bloat
+    state_map["__processed_ids"] = processed_msgs[-500:]
 
     # Save State
     os.makedirs("data", exist_ok=True)
