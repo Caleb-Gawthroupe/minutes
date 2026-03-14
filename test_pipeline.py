@@ -76,15 +76,15 @@ async def run_test_pipeline():
     # ── 4. Mock AI output (what the deep-dive AI would produce) ──
     # In production, this comes from generate_deep_dive_post_async
     mock_ai_payload = {
-        "caption": "Toronto just armed itself against slumlords — 40 new inspectors incoming. 🔨",
+        "caption": "Toronto just hired 40 housing inspectors to crack down on slumlords. 🔨",
         "card_title": "THE SLUMLORD CRACKDOWN",
         "card_body": [
-            "Council approved 40 new housing inspectors — response time drops from 45 to 7 days.",
-            "Landlords who fail 3 inspections face mandatory city-led repairs at their expense.",
-            "In 2024, fines were raised to $10K but only 12 inspectors existed. Now they're backing it up."
+            "Council approved 40 new housing inspectors to enforce rental property standards.",
+            "Complaint response time drops from 45 days to 7. Landlords who fail 3x face city-led repairs.",
+            "In 2024, fines were raised to $10K but only 12 inspectors existed — now enforcement has teeth."
         ],
         "cta": "DM HOUSING for the full report",
-        "img_keyword": "Toronto apartment building enforcement"
+        "img_keyword": "Toronto apartment building inspection"
     }
 
     # ── 5. Render the editorial card ──
