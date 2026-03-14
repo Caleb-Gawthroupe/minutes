@@ -82,6 +82,44 @@ class CivicAIAgent:
         
         return item
 
+    async def generate_aggregate_post_async(self, meeting: dict, bylaw: dict, project: dict) -> str:
+        """Synthesizes three updates into a single social media post."""
+        logger.info("Generating aggregate AI social post...")
+        
+        context = f"""
+        LATEST MEETING: {meeting.get('title')} on {meeting.get('post_date')}
+        LATEST BYLAW: {bylaw.get('title')} ({bylaw.get('source_url')})
+        LATEST PROJECT/AGENDA: {project.get('title')} (Item {project.get('item_number')})
+        Summary: {project.get('summary')}
+        """
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are CivicClaw. Create ONE viral, fact-dense Instagram post that summarizes these three Toronto updates.
+            
+            Guidelines:
+            - Keep it under 2000 characters.
+            - Use a punchy headline.
+            - Use bullet points for the 3 items.
+            - Focus on the impact for Toronto residents.
+            - Include 2-3 emojis.
+            - MUST include a CTA: 'DM MINUTES + your postal code for deeper context.'
+            - No fluff, no 'Here are your updates'. Start with the news.
+            """),
+            ("user", "{context}")
+        ])
+
+        try:
+            chain = prompt | self.llm
+            response = await chain.ainvoke({"context": context})
+            return response.content.strip()
+        except Exception as e:
+            logger.error(f"Aggregate AI generation failed: {e}")
+            return f"Toronto Updates:\n- Meeting: {meeting.get('title')}\n- Bylaw: {bylaw.get('title')}\n- Project: {project.get('title')}\nDM MINUTES for more."
+
+    def generate_aggregate_post(self, meeting: dict, bylaw: dict, project: dict) -> str:
+        import asyncio
+        return asyncio.run(self.generate_aggregate_post_async(meeting, bylaw, project))
+
     def summarize_item(self, item: AgendaItem) -> AgendaItem:
         import asyncio
         return asyncio.run(self.summarize_item_async(item))
