@@ -32,6 +32,5 @@ jobs:
           IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
-          # Use xvfb to run Playwright in a headless environment if needed
-          # (Though Chromium headless usually works fine without it in Actions)
-          python3 single_post_pipeline.py
+          # Use xvfb to run Playwright in a headless environment for better compatibility
+          xvfb-run python3 single_post_pipeline.py

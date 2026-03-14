@@ -38,8 +38,12 @@ class TMMISScraper:
         """Uses Playwright to handshake cookies and fetch structured JSON agendas."""
         items = []
         async with async_playwright() as p:
-             # Using headed mode to bypass WAF bot detection, intended to run under xvfb
-             browser = await p.chromium.launch(headless=False, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
+             # Use headless mode by default, check env 
+             is_headless = os.getenv("HEADLESS", "true").lower() == "true"
+             browser = await p.chromium.launch(
+                 headless=is_headless, 
+                 args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
+             )
              context = await browser.new_context(
                  user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
              )
