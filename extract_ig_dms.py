@@ -76,11 +76,12 @@ def get_instagram_dms():
         
         # Loop through messages in the thread
         for msg in messages_data:
+            sender_id = msg.get("from", {}).get("id", "Unknown_ID")
             sender = msg.get("from", {}).get("username", "Unknown")
             text = msg.get("message", "[Attachment/No Text]")
             timestamp = msg.get("created_time", "")
             
-            print(f"[{timestamp}] {sender}: {text}")
+            print(f"[{timestamp}] {sender} (ID: {sender_id}): {text}")
 
 if __name__ == "__main__":
     get_instagram_dms()
