@@ -99,7 +99,7 @@ class TMMISScraper:
                          }}
                          return response.json();
                      }}
-                 """, {{"url": self.SEARCH_API, "token": xsrf_token if xsrf_token else "", "word": search_word}})
+                 """, {"url": self.SEARCH_API, "token": xsrf_token if xsrf_token else "", "word": search_word})
                  
                  logger.info("Successfully received API response.")
                  
