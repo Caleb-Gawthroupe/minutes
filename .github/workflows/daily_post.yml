@@ -1,0 +1,37 @@
+name: Daily Instagram Post
+
+on:
+  schedule:
+    # Runs at 13:00 UTC (9:00 AM EST) every day
+    - cron: '0 13 * * *'
+  workflow_dispatch: # Allows manual triggering from the GitHub UI
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+
+      - name: Run pipeline
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
+          IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          # Use xvfb to run Playwright in a headless environment if needed
+          # (Though Chromium headless usually works fine without it in Actions)
+          python3 single_post_pipeline.py

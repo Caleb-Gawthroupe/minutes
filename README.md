@@ -70,35 +70,37 @@ python3 single_post_pipeline.py
 
 ---
 
-## ☁️ Cloud Deployment Strategy
+## ☁️ Cloud Hosting & Scheduling (Free Tier)
 
-Moving Toronto Minutes to the cloud ensures 24/7 monitoring and scheduled updates without manual execution.
+### 1. 24/7 Automated Scheduling (GitHub Actions)
+The project includes a GitHub Actions workflow to run the pipeline automatically every day.
 
-### 1. Containerization (Recommended)
-The included `Dockerfile` is pre-configured for **Playwright** and **Python**. This is the most reliable way to deploy.
+- **Setup**:
+  1. Push your code to a **GitHub Repository**.
+  2. Go to `Settings` -> `Secrets and variables` -> `Actions`.
+  3. Add the following **Repository Secrets**:
+     - `OPENROUTER_API_KEY`
+     - `INSTAGRAM_ACCESS_TOKEN`
+     - `INSTAGRAM_USER_ID`
+     - `PEXELS_API_KEY` (optional)
+     - `IMGBB_API_KEY` (optional)
+  4. The workflow will run automatically at **9:00 AM EST** daily. You can also trigger it manually from the `Actions` tab.
 
-**Build and Run Locally**:
-```bash
-docker build -t toronto-minutes .
-docker run --env-file .env toronto-minutes
-```
+### 2. Live API Trigger (Render / Koyeb)
+You can trigger the pipeline on-demand using a simple API call. The project includes a **FastAPI** server for this purpose.
 
-### 2. Deployment Options
-
-| Platform | Best For | Strategy |
-| :--- | :--- | :--- |
-| **GCP Cloud Run / AWS Fargate** | Scaling & Reliability | Deploy the Docker container. Set up a **Cloud Scheduler** (GCP) or **EventBridge** (AWS) to trigger the run via HTTP/Cron. |
-| **GitHub Actions** | Lightweight & Free-ish | Use the `.github/workflows` to run the script on a CRON schedule. Use **GitHub Secrets** for `.env` variables. |
-| **DigitalOcean / Linode** | Simplicity | A simple VPS running a standard Linux cron job. |
-
-### 3. Persistence (Vector Store Storage)
-Since ChromaDB is local by default, you have two choices for cloud persistence:
-1. **Cloud Discovery**: Connect Docker volumes to a persistent disk (e.g., EBS volume on AWS).
-2. **External DB**: Move to a hosted vector store like **Pinecone**, **Supabase (pgvector)**, or **Chroma Cloud**.
-
-### 4. Scheduling
-To post updates every morning after a council meeting:
-- **Cron Expression**: `0 9 * * *` (Runs every day at 9:00 AM).
+- **Local Development**:
+  ```bash
+  python3 src/api_server.py
+  ```
+- **Deployment**:
+  1. Deploy the Dockerized application to **Render** or **Koyeb**.
+  2. The server will run on port `8080` (or the port specified by the `$PORT` environment variable).
+  3. **Trigger via API**: Send a POST request to your public URL:
+     ```bash
+     curl -X POST https://your-app-url.render.com/run
+     ```
+- **Note**: Render's free tier sleeps after 15 minutes of inactivity. Use a service like **Cron-job.org** to ping your `/` endpoint every 10 minutes to keep it awake if needed.
 
 ---
 
