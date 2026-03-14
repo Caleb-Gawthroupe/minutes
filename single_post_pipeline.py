@@ -3,6 +3,10 @@ import asyncio
 import os
 import sys
 import time
+import json
+import random
+import string
+import re
 
 # Add src to sys.path so modules can be found
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -110,7 +114,43 @@ async def run_single_post_pipeline():
     if topic.source_meeting_url:
         caption += f"\n\n🔗 Read the full meeting details here: {topic.source_meeting_url}"
     
-    logger.info(f"✨ Generated Caption (with link): {caption}")
+    # 🆔 Generate and append Unique Identifier (UID)
+    # Use first 4 letters of title + 2 random digits
+    clean_title = re.sub(r'[^A-Za-z]', '', topic.title).upper()
+    prefix = clean_title[:4] if len(clean_title) >= 4 else "MMIS"
+    suffix = ''.join(random.choices(string.digits, k=2))
+    uid = f"{prefix}{suffix}"
+    
+    caption += f"\n\n💬 DM us \"{uid}\" to get the full report instantly!"
+    
+    logger.info(f"✨ Generated UID: {uid}")
+    logger.info(f"✨ Generated Caption (link & UID): {caption}")
+
+    # 💾 Save to Post History for DM matching
+    history_file = "data/post_history.json"
+    os.makedirs("data", exist_ok=True)
+    history = {}
+    if os.path.exists(history_file):
+        try:
+            with open(history_file, "r") as f:
+                history = json.load(f)
+        except Exception as e:
+            logger.warning(f"Could not load history file: {e}")
+    
+    history[uid] = {
+        "title": topic.title,
+        "item_number": topic.item_number,
+        "caption": caption,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "source_url": str(topic.source_meeting_url)
+    }
+    
+    try:
+        with open(history_file, "w") as f:
+            json.dump(history, f, indent=2)
+        logger.info(f"💾 Saved UID {uid} to history.")
+    except Exception as e:
+        logger.error(f"Failed to save history: {e}")
 
     # ── 7. RENDER 3-SLIDE CAROUSEL ──
     renderer = SocialCardRenderer()
