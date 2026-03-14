@@ -35,17 +35,21 @@ class TMMISScraper:
             return ""
 
     async def fetch_agenda_items_async(self, search_word: str) -> List[AgendaItem]:
-        """Uses Playwright to handshake cookies and fetch structured JSON agendas."""
-        items = []
         async with async_playwright() as p:
-             # Use headless mode by default, check env 
-             is_headless = os.getenv("HEADLESS", "true").lower() == "true"
+             # Force HEADLESS=false to bypass WAF detection in CI
+             is_headless = os.getenv("HEADLESS", "false").lower() == "true"
              browser = await p.chromium.launch(
                  headless=is_headless, 
-                 args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
+                 args=[
+                     "--no-sandbox", 
+                     "--disable-blink-features=AutomationControlled",
+                     "--disable-infobars",
+                     "--window-size=1280,720"
+                 ]
              )
              context = await browser.new_context(
-                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                 viewport={"width": 1280, "height": 720}
              )
              page = await context.new_page()
              

@@ -31,6 +31,7 @@ jobs:
           INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
           IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          HEADLESS: "false"
         run: |
-          # Use xvfb to run Playwright in a headless environment for better compatibility
+          # Use xvfb to run Playwright in a "headed" environment for stealth
           xvfb-run python3 single_post_pipeline.py
