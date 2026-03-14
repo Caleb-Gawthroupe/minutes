@@ -26,6 +26,10 @@ def post_photo_to_instagram(access_token, ig_user_id, image_url, caption):
         'access_token': access_token
     }
 
+    print(f"DEBUG: Media Payload being sent to {media_url}:")
+    print(f"DEBUG: image_url={image_url}")
+    print(f"DEBUG: caption_len={len(caption)}")
+
     try:
         response = requests.post(media_url, data=media_payload)
         response.raise_for_status()

@@ -1,12 +1,18 @@
 import logging
 import asyncio
 import os
+import sys
+
+# Add src to sys.path so modules can be found
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
 from scraper.open_data import OpenDataClient
 from scraper.tmmis import TMMISScraper
 from scraper.bylaws_registry import BylawRegistryScraper
 from ai.agent import CivicAIAgent
 from social.instagram import InstagramClient
 from instagram_poster import post_photo_to_instagram
+from visuals.renderer import SocialCardRenderer
 from dotenv import load_dotenv
 
 # Set up logging
@@ -37,28 +43,69 @@ async def run_single_post_pipeline():
         "source_url": str(bylaw_doc.source_url) if bylaw_doc else "https://www.toronto.ca/legdocs/bylaws/2026/law0061.pdf"
     }
     
-    # 4. Generate AI Caption
+    # 4. Generate Structured AI Content
     ai_agent = CivicAIAgent()
-    caption = await ai_agent.generate_aggregate_post_async(meeting_data, bylaw_data, project_data)
+    ai_payload = await ai_agent.generate_aggregate_post_async(meeting_data, bylaw_data, project_data)
     
-    logger.info(f"✨ Generated Caption:\n{caption}")
+    caption = ai_payload.get('caption', 'New Toronto updates! Check the card. 🏙️')
+    logger.info(f"✨ Generated Short Caption: {caption}")
     
-    # 5. Post to Instagram
-    # Image URL from instagram_poster.py as requested
-    IMAGE_URL = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSGZdBKcNDO8hu-tnOjXH6X9wYUqNWyMSztzA&s'
+    # 5. Create Premium Visual Card
+    from visuals.renderer import SocialCardRenderer
+    from visuals.uploader import ImgBBUploader
+    from visuals.source import ImageSource
     
-    ACCESS_TOKEN = os.getenv('INSTAGRAM_ACCESS_TOKEN')
-    IG_USER_ID = os.getenv('INSTAGRAM_ACCOUNT_ID') # Note: main script uses ACCOUNT_ID, poster uses IG_USER_ID
+    visual_renderer = SocialCardRenderer()
+    uploader = ImgBBUploader()
+    sourcer = ImageSource()
     
-    if not IG_USER_ID:
-        IG_USER_ID = os.getenv('INSTAGRAM_USER_ID') # Fallback to poster's naming
+    # Extract data for card
+    card_title = ai_payload.get('card_title', 'CIVIC ALERT').upper()
+    card_subtitle = meeting_data.get('title', 'City Hall Update')
+    card_body = ai_payload.get('card_body', ['Check DM for details.'])
+    card_cta = ai_payload.get('cta', 'DM MINUTES for more')
+    img_keyword = ai_payload.get('img_keyword', 'Toronto')
 
-    if ACCESS_TOKEN and IG_USER_ID:
+    # Choose a theme
+    card_theme = "modern"
+    if any(kw in card_title.lower() for kw in ['urgent', 'emergency', 'slumlord', 'warning']):
+        card_theme = "emergency"
+
+    # Source dynamic background
+    bg_image_url = sourcer.get_image_for_keyword(img_keyword)
+    logger.info(f"📸 Sourced dynamic background for '{img_keyword}': {bg_image_url}")
+
+    card_filename = f"post_{int(asyncio.get_event_loop().time())}.jpg"
+    image_path = await visual_renderer.render_card(
+        title=card_title,
+        subtitle=card_subtitle,
+        body=card_body,
+        cta=card_cta,
+        bg_image=bg_image_url,
+        filename=card_filename,
+        theme=card_theme
+    )
+
+    # 6. Upload to ImgBB for public access (required by Instagram Graph API)
+    public_image_url = uploader.upload_image(image_path)
+    
+    if public_image_url:
+        logger.info("Waiting 10 seconds for image propagation...")
+        import time
+        time.sleep(10)
+
+    # 7. Post to Instagram
+    ACCESS_TOKEN = os.getenv('INSTAGRAM_ACCESS_TOKEN')
+    IG_USER_ID = os.getenv('INSTAGRAM_USER_ID') or os.getenv('INSTAGRAM_ACCOUNT_ID')
+    
+    if ACCESS_TOKEN and IG_USER_ID and public_image_url:
+        logger.info(f"🎨 Visual published at: {public_image_url}")
         logger.info("📱 Posting to Instagram...")
-        post_photo_to_instagram(ACCESS_TOKEN, IG_USER_ID, IMAGE_URL, caption)
+        post_photo_to_instagram(ACCESS_TOKEN, IG_USER_ID, public_image_url, caption)
     else:
-        logger.warning("⚠️ Skipping Instagram post: Missing credentials (INSTAGRAM_ACCESS_TOKEN or INSTAGRAM_ACCOUNT_ID).")
-        logger.info(f"CAPTION WOULD HAVE BEEN:\n{caption}")
+        logger.warning("⚠️ Skipping Instagram post: Missing credentials or image hosting failed.")
+        logger.info(f"STAGED CAPTION:\n{caption}")
+        logger.info(f"LOCAL CARD: {image_path}")
 
 if __name__ == "__main__":
     asyncio.run(run_single_post_pipeline())

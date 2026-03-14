@@ -82,9 +82,9 @@ class CivicAIAgent:
         
         return item
 
-    async def generate_aggregate_post_async(self, meeting: dict, bylaw: dict, project: dict) -> str:
-        """Synthesizes three updates into a single social media post."""
-        logger.info("Generating aggregate AI social post...")
+    async def generate_aggregate_post_async(self, meeting: dict, bylaw: dict, project: dict) -> dict:
+        """Synthesizes three updates into a structured payload for image-centric posting."""
+        logger.info("Generating structured high-impact AI content...")
         
         context = f"""
         LATEST MEETING: {meeting.get('title')} on {meeting.get('post_date')}
@@ -94,16 +94,29 @@ class CivicAIAgent:
         """
 
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are CivicClaw. Create ONE viral, fact-dense Instagram post that summarizes these three Toronto updates.
+            ("system", """You are CivicClaw, Toronto's premier civic engagement agent.
+            We are moving to an IMAGE-CENTRIC posting style. 
             
-            Guidelines:
-            - Keep it under 2000 characters.
-            - Use a punchy headline.
-            - Use bullet points for the 3 items.
-            - Focus on the impact for Toronto residents.
-            - Include 2-3 emojis.
-            - MUST include a CTA: 'DM MINUTES + your postal code for deeper context.'
-            - No fluff, no 'Here are your updates'. Start with the news.
+            Your task is to produce a JSON-like payload with two specific parts:
+            1. **"caption"**: A very short (max 200 chars), punchy hook for the Instagram caption. It should entice people to look at the image. Use 1 emoji. 
+               Example: "URGENT: Your rent might be changing. 🏠 Details on the card below! #TorontoMinutes"
+            
+            2. **"card_title"**: A short, bold headline for the graphic (max 30 chars).
+            
+            3. **"card_body"**: A list of the 3 most important, human-centric facts from the provided context. 
+               Each fact must be clear, plain-language, and explain the DIRECT IMPACT on residents.
+               Keep each bullet point under 120 characters to ensure it fits on the card.
+            
+            4. **"cta"**: A specific call to action related to the main item (e.g., "DM FIGHTSLUMLORD to email your councillor").
+            
+            5. **"img_keyword"**: A single, high-relevance search query for a background image (e.g., "Mayor Olivia Chow Toronto", "Toronto streetcar sunset", "Toronto public housing building").
+            
+            Provide your response exactly as:
+            CAPTION: [Your hook here]
+            TITLE: [Your card title here]
+            BODY: [Bullet 1]|[Bullet 2]|[Bullet 3]
+            CTA: [Your cta here]
+            IMG: [Your image keyword here]
             """),
             ("user", "{context}")
         ])
@@ -111,10 +124,27 @@ class CivicAIAgent:
         try:
             chain = prompt | self.llm
             response = await chain.ainvoke({"context": context})
-            return response.content.strip()
+            content = response.content.strip()
+            
+            # Simple manual parsing
+            lines = content.split('\n')
+            result = {}
+            for line in lines:
+                if line.startswith("CAPTION:"): result['caption'] = line.replace("CAPTION:", "").strip()
+                elif line.startswith("TITLE:"): result['card_title'] = line.replace("TITLE:", "").strip()
+                elif line.startswith("BODY:"): result['card_body'] = line.replace("BODY:", "").strip().split('|')
+                elif line.startswith("CTA:"): result['cta'] = line.replace("CTA:", "").strip()
+                elif line.startswith("IMG:"): result['img_keyword'] = line.replace("IMG:", "").strip()
+            
+            return result
         except Exception as e:
-            logger.error(f"Aggregate AI generation failed: {e}")
-            return f"Toronto Updates:\n- Meeting: {meeting.get('title')}\n- Bylaw: {bylaw.get('title')}\n- Project: {project.get('title')}\nDM MINUTES for more."
+            logger.error(f"Structured AI generation failed: {e}")
+            return {
+                "caption": "New Toronto updates just dropped. Check the card! 🏙️",
+                "card_title": "CIVIC UPDATE",
+                "card_body": [f"Meeting: {meeting.get('title')}", f"Bylaw: {bylaw.get('title')}", f"Project: {project.get('title')}"],
+                "cta": "DM MINUTES for more."
+            }
 
     def generate_aggregate_post(self, meeting: dict, bylaw: dict, project: dict) -> str:
         import asyncio
