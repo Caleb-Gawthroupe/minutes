@@ -14,10 +14,27 @@ venv.bak/
 
 # Project specific
 downloads/
+*.log
+
+# Testing / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.tox/
 
 # IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # Playwright
 .playwright/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+
+test.pdf

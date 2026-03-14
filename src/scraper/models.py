@@ -21,3 +21,34 @@ class BylawDocument(BaseModel):
     # Future fields (e.g., Langchain summaries) can be added here
     # summary: Optional[str] = None
     # key_details: Optional[list[str]] = None
+
+
+# --- Phase 2 Models: Total Data Scraping Flow ---
+
+class Notice(BaseModel):
+    """Represents a public notice pulled from the Toronto Open Data API."""
+    id: str = Field(..., description="The unique identifier for the notice from the API.")
+    title: str = Field(..., description="The title of the public notice.")
+    notice_type: str = Field(default="", description="The category/type of the notice.")
+    post_date: Optional[datetime] = Field(default=None, description="When the notice was published.")
+    meeting_id: Optional[str] = Field(default=None, description="The associated TMMIS meeting ID, if any.")
+    url: Optional[HttpUrl] = Field(default=None, description="Direct URL to the notice details.")
+
+
+class AgendaItem(BaseModel):
+    """Represents a specific item or motion on a meeting agenda."""
+    item_number: str = Field(..., description="The alphanumeric designation (e.g., 'TE9.45').")
+    title: str = Field(..., description="The title of the agenda item.")
+    status: str = Field(default="", description="The status (e.g., 'Adopted', 'Deferred').")
+    summary: Optional[str] = Field(default=None, description="Extracted 'Summary' or 'Background' of the item.")
+    recommendations: Optional[str] = Field(default=None, description="Proposed recommendations text.")
+    pdf_links: list[HttpUrl] = Field(default_factory=list, description="Links to attached PDFs (staff reports, etc).")
+    parsed_pdf_text: Optional[str] = Field(default=None, description="Extracted text from attached PDFs using PyMuPDF.")
+
+
+class Meeting(BaseModel):
+    """Represents a specific TMMIS meeting."""
+    meeting_id: str = Field(..., description="The TMMIS meeting identifier.")
+    committee_name: str = Field(default="", description="Name of the committee.")
+    meeting_date: Optional[datetime] = Field(default=None, description="The date of the meeting.")
+    agenda_items: list[AgendaItem] = Field(default_factory=list, description="The items discussed in this meeting.")
