@@ -71,6 +71,42 @@ class InstagramClient:
             logger.error(f"Failed to post to Instagram: {e}")
             return False
 
+    def send_dm_reply(self, recipient_id: str, message_text: str) -> bool:
+        """Sends a direct message reply to a user who has messaged the business account within 24 hours."""
+        if not self.access_token:
+            logger.warning("Instagram Access Token missing. Simulated DM reply.")
+            logger.info(f"PENDING DM to {recipient_id}:\n{message_text}")
+            return False
+        
+        # We need the Facebook Page ID to send messages via Instagram Direct API.
+        # This is expected to be passed from the environment for the DM agent.
+        page_id = os.getenv("FACEBOOK_PAGE_ID")
+        # Note: Sending DMs typically uses the Page Access Token, not the User token.
+        page_token = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN", self.access_token)
+
+        if not page_id:
+            logger.error("FACEBOOK_PAGE_ID missing. Cannot send real DM.")
+            return False
+
+        try:
+            url = f"https://graph.facebook.com/v19.0/{page_id}/messages"
+            payload = {
+                "recipient": {"id": recipient_id},
+                "message": {"text": message_text},
+                "messaging_type": "RESPONSE",
+                "access_token": page_token
+            }
+            res = requests.post(url, json=payload)
+            res.raise_for_status()
+            logger.info(f"✅ Successfully sent DM reply to {recipient_id}")
+            return True
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"❌ Failed to send DM to {recipient_id}: {e.response.text}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Error sending DM: {e}")
+            return False
+
 if __name__ == "__main__":
     # Test stub
     client = InstagramClient()

@@ -26,33 +26,32 @@
         <!-- Petitions will be loaded here -->
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-        const API_BASE = "http://localhost:8000"; // Update this when deploying to Render
-
-        // Test Data Bootstrap (For local dev only)
-        async function bootstrapTestData() {
-            try {
-                await fetch(`${API_BASE}/petitions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        tag: "EX29.14",
-                        title: "Crack Down on Bad Landlords",
-                        summary: "Support the city's move to double RentSafeTO officers and create a public landlord database."
-                    })
-                });
-            } catch (e) {
-                console.log("Bootstrap might have failed or already exists.");
-            }
-            loadPetition("EX29.14");
-        }
+        const SUPABASE_URL = "https://rbfrowtregxkt6wklwdx.supabase.co"; // Derived from your publishable key prefix
+        const SUPABASE_KEY = "sb_publishable_RBFROWtrEGXkt6wkLWDxzw_TO8zAlVm";
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         async function loadPetition(tag) {
             try {
-                const response = await fetch(`${API_BASE}/petitions/${tag}`);
-                if (!response.ok) throw new Error("Petition not found");
-                const data = await response.json();
-                renderPetition(data);
+                // 1. Get petition details
+                const { data: petition, error } = await supabase
+                    .from('petitions')
+                    .select('*')
+                    .eq('tag', tag)
+                    .single();
+
+                if (error || !petition) throw new Error("Petition not found");
+
+                // 2. Get signature count
+                const { count, error: countError } = await supabase
+                    .from('signatures')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('petition_tag', tag);
+
+                if (countError) throw countError;
+
+                renderPetition({ ...petition, signature_count: count || 0 });
             } catch (error) {
                 console.error("Error loading petition:", error);
             }
@@ -63,8 +62,8 @@
             container.innerHTML = `
                 <div class="petition-card">
                     <span class="tag">#${petition.tag}</span>
-                    <h2>${petition.title}</h2>
-                    <p>${petition.summary}</p>
+                    <h2>${petition.title || 'Civic Action'}</h2>
+                    <p>${petition.summary || 'Sign this petition to make your voice heard.'}</p>
                     <p>Current Signatures: <span class="signatures" id="sig-count-${petition.tag}">${petition.signature_count}</span></p>
                     
                     <form id="form-${petition.tag}" onsubmit="signPetition(event, '${petition.tag}')">
@@ -88,35 +87,46 @@
             msgDiv.innerText = "Submitting...";
 
             try {
-                const response = await fetch(`${API_BASE}/petitions/${tag}/sign`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: nameInput.value,
-                        postal_code: postalInput.value
-                    })
-                });
+                const name = nameInput.value;
+                const postal = postalInput.value.replace(/\s/g, '').toUpperCase();
 
-                const data = await response.json();
+                // 1. Check for duplicates
+                const { data: existing } = await supabase
+                    .from('signatures')
+                    .select('id')
+                    .eq('petition_tag', tag)
+                    .ilike('name', name)
+                    .eq('postal_code', postal);
 
-                if (response.ok) {
-                    msgDiv.className = "success";
-                    msgDiv.innerText = "Thank you for signing!";
-                    nameInput.value = "";
-                    postalInput.value = "";
-                    countSpan.innerText = parseInt(countSpan.innerText) + 1;
-                } else {
+                if (existing && existing.length > 0) {
                     msgDiv.className = "error";
-                    msgDiv.innerText = data.detail || "Failed to sign petition.";
+                    msgDiv.innerText = "You have already signed this petition.";
+                    return;
                 }
+
+                // 2. Insert signature
+                const { error } = await supabase
+                    .from('signatures')
+                    .insert([{ petition_tag: tag, name: name, postal_code: postal }]);
+
+                if (error) throw error;
+
+                msgDiv.className = "success";
+                msgDiv.innerText = "Thank you for signing!";
+                nameInput.value = "";
+                postalInput.value = "";
+                countSpan.innerText = parseInt(countSpan.innerText) + 1;
+                
             } catch (error) {
                 msgDiv.className = "error";
-                msgDiv.innerText = "Network error. Please try again.";
+                msgDiv.innerText = "Error: " + (error.message || "Failed to sign.");
             }
         }
 
-        // Initialize
-        bootstrapTestData();
+        // Initialize with a known tag or from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const tag = urlParams.get('tag') || "EX29.14"; 
+        loadPetition(tag);
 
     </script>
 </body>

@@ -54,31 +54,67 @@ def send_email(subject, body):
         return False
 
 def save_petition(post_uid, name, postal_code):
-    """Saves a petition signature to the ledger."""
-    os.makedirs("data", exist_ok=True)
-    petitions = {}
-    if os.path.exists(PETITION_FILE):
-        with open(PETITION_FILE, "r") as f:
-            petitions = json.load(f)
+    """Saves a petition signature by communicating directly with Supabase via the Service Key."""
+    from supabase import create_client, Client
     
-    if post_uid not in petitions:
-        petitions[post_uid] = []
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_KEY")
     
-    petitions[post_uid].append({
-        "name": name,
-        "postal_code": postal_code,
-        "timestamp": json.dumps(True) # Dummy way to get a timestamp placeholder, usually time.time()
-    })
+    if not url or not key:
+        logger.error("❌ SUPABASE_URL or SUPABASE_SERVICE_KEY missing. Cannot save petition.")
+        return False
+        
+    supabase: Client = create_client(url, key)
+    tag = post_uid.strip()
     
-    with open(PETITION_FILE, "w") as f:
-        json.dump(petitions, f, indent=2)
-    logger.info(f"✍️ Petition signed for {post_uid} by {name}")
+    # 1. Ensure the petition exists
+    try:
+        # Check if it exists
+        existing = supabase.table("petitions").select("tag").eq("tag", tag).execute()
+        if not existing.data:
+            logger.info(f"Creating new petition topic: {tag}")
+            supabase.table("petitions").insert({
+                "tag": tag,
+                "title": f"Petition regarding {tag}",
+                "summary": "Generated automatically via Instagram DM request."
+            }).execute()
+    except Exception as e:
+        logger.error(f"Failed to check/create petition {tag} in Supabase: {e}")
+        # Proceed anyway in case it was a race condition creation
+
+    # 2. Add the signature
+    try:
+        # Prevent duplicates
+        formatted_pc = postal_code.replace(" ", "").upper()
+        existing_sig = supabase.table("signatures").select("id").eq("petition_tag", tag).ilike("name", name).eq("postal_code", formatted_pc).execute()
+        
+        if existing_sig.data:
+            logger.warning(f"Duplicate signature attempt by {name}")
+            return False
+            
+        res = supabase.table("signatures").insert({
+            "petition_tag": tag,
+            "name": name,
+            "postal_code": formatted_pc
+        }).execute()
+        
+        if res.data:
+            logger.info(f"✍️ Petition signed securely for {tag} by {name} via Supabase")
+            return True
+        else:
+            logger.error("❌ Signature rejected by Supabase.")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Supabase Error while signing petition: {e}")
+        return False
 
 async def process_dm_state(sender_id, sender_username, text, history, state_map):
     """Processes a single DM based on the user's current conversation state."""
+    from social.instagram import InstagramClient
     user_state = state_map.get(sender_id, {"state": "INIT"})
     msg_clean = text.strip().upper()
     agent = CivicAIAgent()
+    ig_client = InstagramClient()
 
     if user_state["state"] == "INIT":
         # Check for UID
@@ -88,32 +124,39 @@ async def process_dm_state(sender_id, sender_username, text, history, state_map)
                     "state": "AWAIT_ACTION",
                     "post_uid": uid
                 }
+                topic_title = history[uid]['title']
+                msg = f"Thanks for your interest in {uid}: {topic_title}!\n\nReply with 'EMAIL' to draft a professional email to the representative, or 'PETITION' to sign the petition."
                 logger.info(f"MATCH: {sender_username} started workflow for {uid}")
-                print(f"\n[DM] {sender_username} interested in {uid}: {history[uid]['title']}")
-                print(f"Action required: Reply with 'EMAIL' or 'PETITION'")
+                ig_client.send_dm_reply(sender_id, msg)
                 return
 
     elif user_state["state"] == "AWAIT_ACTION":
         if "EMAIL" in msg_clean:
             state_map[sender_id]["state"] = "AWAIT_EMAIL_CONTENT"
-            print(f"[DM] {sender_username} wants to EMAIL. Awaiting message content...")
+            msg = "Great! Please send me the raw thoughts you'd like to include in the email. I'll use AI to format it professionally and send it for you."
+            ig_client.send_dm_reply(sender_id, msg)
         elif "PETITION" in msg_clean:
             state_map[sender_id]["state"] = "AWAIT_PETITION_DATA"
-            print(f"[DM] {sender_username} wants to sign PETITION. Awaiting 'Name PostalCode'...")
+            msg = "Awesome! To sign the petition securely, please reply with your First Name and Postal Code (e.g., 'John M5V 2H1')."
+            ig_client.send_dm_reply(sender_id, msg)
         else:
-            print(f"[DM] {sender_username} sent unknown action. Still awaiting EMAIL/PETITION.")
+            msg = "Sorry, I didn't catch that. Please reply with either 'EMAIL' or 'PETITION'."
+            ig_client.send_dm_reply(sender_id, msg)
 
     elif user_state["state"] == "AWAIT_EMAIL_CONTENT":
         uid = user_state["post_uid"]
         topic = history[uid]["title"]
-        print(f"[DM] {sender_username} sent email content. Formatting with AI...")
+        msg_wait = "Formatting your email with AI... ⏳"
+        ig_client.send_dm_reply(sender_id, msg_wait)
         
         formatted_email = await agent.format_user_email_async(topic, text)
         if send_email(f"Action Request: {topic}", formatted_email):
-            print(f"✅ Email successfully relayed for {sender_username}")
+            msg_success = "✅ Your email has been formatted professionally and successfully relayed to the representative!"
+            ig_client.send_dm_reply(sender_id, msg_success)
             state_map[sender_id] = {"state": "INIT"} # Reset
         else:
-            print(f"❌ Failed to relay email for {sender_username}")
+            msg_fail = "❌ Something went wrong while relaying your email. Please try again later."
+            ig_client.send_dm_reply(sender_id, msg_fail)
 
     elif user_state["state"] == "AWAIT_PETITION_DATA":
         uid = user_state["post_uid"]
@@ -122,11 +165,16 @@ async def process_dm_state(sender_id, sender_username, text, history, state_map)
         if len(parts) >= 1:
             name = parts[0]
             postal = parts[1] if len(parts) > 1 else "Unknown"
-            save_petition(uid, name, postal)
-            print(f"✅ Petition signed by {sender_username} for {uid}")
-            state_map[sender_id] = {"state": "INIT"} # Reset
+            if save_petition(uid, name, postal):
+                msg_success = f"✅ Thank you, {name}! Your signature for {uid} has been securely recorded."
+                ig_client.send_dm_reply(sender_id, msg_success)
+                state_map[sender_id] = {"state": "INIT"} # Reset
+            else:
+                msg_fail = "❌ Failed to secure your signature. Make sure your Postal Code is a valid format (e.g., M5V 2H1) and you haven't already signed."
+                ig_client.send_dm_reply(sender_id, msg_fail)
         else:
-            print(f"[DM] {sender_username} sent invalid petition format. Expected 'Name PostalCode'.")
+            msg_retry = "Invalid format. Please reply with exactly: 'Name PostalCode'."
+            ig_client.send_dm_reply(sender_id, msg_retry)
 
 async def run_dm_listener():
     if not PAGE_ACCESS_TOKEN:
