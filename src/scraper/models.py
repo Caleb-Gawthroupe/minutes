@@ -44,6 +44,10 @@ class AgendaItem(BaseModel):
     recommendations: Optional[str] = Field(default=None, description="Proposed recommendations text.")
     pdf_links: list[HttpUrl] = Field(default_factory=list, description="Links to attached PDFs (staff reports, etc).")
     parsed_pdf_text: Optional[str] = Field(default=None, description="Extracted text from attached PDFs using PyMuPDF.")
+    
+    # --- Phase 3: AI Intelligence ---
+    ai_summary: Optional[str] = Field(default=None, description="AI-generated concise summary of the item.")
+    social_post: Optional[str] = Field(default=None, description="AI-generated viral social media caption.")
 
 
 class Meeting(BaseModel):

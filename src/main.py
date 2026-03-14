@@ -23,23 +23,37 @@ def run_phase_2_pipeline():
     logger.info(f"Found {len(notices)} notices. Moving to process deep context.")
     
     # 2. TMMIS Deep Context (REST API Bypass)
-    # Using the undocumented REST APIs discovered to pull clean JSON agenda items
     tmmis = TMMISScraper(download_dir="downloads/tmmis")
-    
-    # For the simulation/demo, we search for 'housing' related items
     search_keyword = "housing"
     logger.info(f"Fetching recent TMMIS agenda items related to '{search_keyword}'...")
-    
-    # Note: This uses xvfb-run under the hood if run via the provided CLI 
-    # but the class itself handles the Playwright handshake.
     items = tmmis.fetch_agenda_items(search_keyword)
     
+    # 3. Phase 3: AI Intelligence & Social Integration
     if items:
-        logger.info(f"Successfully retrieved {len(items)} structured agenda items from TMMIS.")
-    else:
-        logger.warning("No TMMIS items found for the given keyword.")
+        from ai.agent import CivicAIAgent
+        from social.instagram import InstagramClient
+        import asyncio
 
-    # 3. Bylaw Registry Polling (The Final Word)
+        ai_agent = CivicAIAgent()
+        instagram = InstagramClient()
+        
+        logger.info(f"Processing {len(items)} items through AI Intelligence...")
+        
+        processed_items = []
+        for item in items[:3]: # Limit to 3 for demo/safety
+            # Run the AI summarizer
+            processed_item = ai_agent.summarize_item(item)
+            
+            # Post to Social (Simulated/Real)
+            if processed_item.social_post:
+                instagram.post_text_update(processed_item.social_post)
+            
+            processed_items.append(processed_item)
+            
+        logger.info(f"AI & Social Phase Complete. Processed {len(processed_items)} items.")
+        items = processed_items # Update the items list for output
+
+    # 4. Bylaw Registry Polling (The Final Word)
     # As a demonstration of closing the loop, we check the registry for a known proposal/bylaw 
     bylaw_scraper = BylawRegistryScraper(download_dir="downloads/bylaws")
     
