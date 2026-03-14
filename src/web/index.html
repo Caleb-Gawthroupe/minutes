@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CivicClaw Petition Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #fdfdfd; color: #333; }
+        .petition-card { border: 1px solid #ddd; padding: 20px; border-radius: 8px; background: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        h1 { color: #2c3e50; }
+        .tag { display: inline-block; background: #e0f2fe; color: #0284c7; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold; margin-bottom: 10px; }
+        .signatures { font-weight: bold; color: #16a34a; font-size: 1.2em; }
+        input[type="text"] { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #2563eb; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
+        button:hover { background-color: #1d4ed8; }
+        .error { color: #dc2626; font-size: 0.9em; margin-top: 5px; }
+        .success { color: #16a34a; font-size: 0.9em; margin-top: 5px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>CivicClaw Action Center</h1>
+    <p>Sign active petitions directly linked to our Instagram updates.</p>
+
+    <div id="petitions-container">
+        <!-- Petitions will be loaded here -->
+    </div>
+
+    <script>
+        const API_BASE = "http://localhost:8000"; // Update this when deploying to Render
+
+        // Test Data Bootstrap (For local dev only)
+        async function bootstrapTestData() {
+            try {
+                await fetch(`${API_BASE}/petitions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tag: "EX29.14",
+                        title: "Crack Down on Bad Landlords",
+                        summary: "Support the city's move to double RentSafeTO officers and create a public landlord database."
+                    })
+                });
+            } catch (e) {
+                console.log("Bootstrap might have failed or already exists.");
+            }
+            loadPetition("EX29.14");
+        }
+
+        async function loadPetition(tag) {
+            try {
+                const response = await fetch(`${API_BASE}/petitions/${tag}`);
+                if (!response.ok) throw new Error("Petition not found");
+                const data = await response.json();
+                renderPetition(data);
+            } catch (error) {
+                console.error("Error loading petition:", error);
+            }
+        }
+
+        function renderPetition(petition) {
+            const container = document.getElementById('petitions-container');
+            container.innerHTML = `
+                <div class="petition-card">
+                    <span class="tag">#${petition.tag}</span>
+                    <h2>${petition.title}</h2>
+                    <p>${petition.summary}</p>
+                    <p>Current Signatures: <span class="signatures" id="sig-count-${petition.tag}">${petition.signature_count}</span></p>
+                    
+                    <form id="form-${petition.tag}" onsubmit="signPetition(event, '${petition.tag}')">
+                        <input type="text" id="name-${petition.tag}" placeholder="Full Name" required>
+                        <input type="text" id="postal-${petition.tag}" placeholder="Postal Code (e.g. M5V 2H1)" required>
+                        <button type="submit">Sign Petition</button>
+                        <div id="msg-${petition.tag}"></div>
+                    </form>
+                </div>
+            `;
+        }
+
+        async function signPetition(event, tag) {
+            event.preventDefault();
+            const nameInput = document.getElementById(`name-${tag}`);
+            const postalInput = document.getElementById(`postal-${tag}`);
+            const msgDiv = document.getElementById(`msg-${tag}`);
+            const countSpan = document.getElementById(`sig-count-${tag}`);
+
+            msgDiv.className = "";
+            msgDiv.innerText = "Submitting...";
+
+            try {
+                const response = await fetch(`${API_BASE}/petitions/${tag}/sign`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: nameInput.value,
+                        postal_code: postalInput.value
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    msgDiv.className = "success";
+                    msgDiv.innerText = "Thank you for signing!";
+                    nameInput.value = "";
+                    postalInput.value = "";
+                    countSpan.innerText = parseInt(countSpan.innerText) + 1;
+                } else {
+                    msgDiv.className = "error";
+                    msgDiv.innerText = data.detail || "Failed to sign petition.";
+                }
+            } catch (error) {
+                msgDiv.className = "error";
+                msgDiv.innerText = "Network error. Please try again.";
+            }
+        }
+
+        // Initialize
+        bootstrapTestData();
+
+    </script>
+</body>
+</html>
