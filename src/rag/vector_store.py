@@ -24,6 +24,17 @@ class CivicVectorStore:
             try:
                 import chromadb
                 from chromadb.config import Settings
+                import sys
+
+                # Fix for older SQLite versions on some Linux distros
+                try:
+                    import sqlite3
+                    if sqlite3.sqlite_version_info < (3, 35, 0):
+                        import pysqlite3
+                        sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+                        logger.info("Patched sqlite3 with pysqlite3-binary for ChromaDB compatibility.")
+                except (ImportError, KeyError):
+                    pass
 
                 client = chromadb.PersistentClient(
                     path=self.persist_dir,
