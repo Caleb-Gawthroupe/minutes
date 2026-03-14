@@ -36,7 +36,7 @@ async def run_test_pipeline():
             "New property tax rebate for seniors confirmed."
         ],
         "cta": "DM BUDGET for the full report",
-        "img_keyword": "Mayor Olivia Chow Toronto"
+        "img_keyword": "Mayor Olivia Chow"
     }
 
     # 2. Source Image

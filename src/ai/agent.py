@@ -109,7 +109,7 @@ class CivicAIAgent:
             
             4. **"cta"**: A specific call to action related to the main item (e.g., "DM FIGHTSLUMLORD to email your councillor").
             
-            5. **"img_keyword"**: A single, high-relevance search query for a background image (e.g., "Mayor Olivia Chow Toronto", "Toronto streetcar sunset", "Toronto public housing building").
+            5. **"img_keyword"**: A high-relevance search query for a background image. **CRITICAL**: Never provide a name alone (e.g., use "Mayor Olivia Chow Toronto City Hall" instead of "Olivia Chow" to avoid unrelated results like animals). Favor "potholes", "Toronto streetcar", "City Hall council chamber", or "urban housing" if the news is about infrastructure.
             
             Provide your response exactly as:
             CAPTION: [Your hook here]

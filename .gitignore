@@ -38,3 +38,8 @@ playwright/.cache/
 
 
 test.pdf
+# Utils & OS
+get_long_live.js
+node_modules/
+.DS_Store
+Thumbs.db

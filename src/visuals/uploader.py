@@ -12,13 +12,16 @@ class ImgBBUploader:
 
     def upload_image(self, file_path: str, expiration: int = 600) -> Optional[str]:
         """
-        Uploads an image. Tries ImgBB (prioritizing display_url) then Catbox.
+        Uploads an image. Tries Catbox first (vetted for Meta compatibility),
+        shorter links, and high reliability. Falls back to ImgBB.
         """
+        url = self._upload_catbox(file_path)
+        if url: return url
+        
         if self.api_key:
-            url = self._upload_imgbb(file_path, expiration)
-            if url: return url
+            return self._upload_imgbb(file_path, expiration)
             
-        return self._upload_catbox(file_path)
+        return None
 
     def _upload_imgbb(self, file_path: str, expiration: int) -> Optional[str]:
         try:
