@@ -5,6 +5,8 @@ on:
     # Runs at 13:00 UTC (9:00 AM EST) every day
     - cron: '0 13 * * *'
   workflow_dispatch: # Allows manual triggering from the GitHub UI
+  repository_dispatch: # Allows triggering via an external API "ping"
+    types: [ping-pipeline]
 
 jobs:
   run-pipeline:
