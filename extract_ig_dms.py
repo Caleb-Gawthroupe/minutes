@@ -108,15 +108,24 @@ def save_petition(post_uid, name, postal_code):
         logger.error(f"❌ Supabase Error while signing petition: {e}")
         return False
 
-async def process_dm_state(sender_id, sender_username, text, history, supabase):
+async def process_dm_state(sender_id, sender_username, text, msg_id, history, supabase):
     """Processes a single DM based on the user's current conversation state in Supabase."""
     from social.instagram import InstagramClient
     
     # 1. Fetch current state from Supabase
     state_res = supabase.table("user_states").select("state_json").eq("sender_id", sender_id).execute()
-    user_state = state_res.data[0]["state_json"] if state_res.data else {"state": "INIT"}
+    user_state = state_res.data[0]["state_json"] if state_res.data else {"state": "INIT", "last_msg_id": None}
     
-    logger.info(f"👤 User {sender_username} is in state: {user_state['state']}")
+    # --- DEDUPLICATION LOGIC ---
+    last_id = user_state.get("last_msg_id")
+    if last_id == msg_id:
+        # We've already handled this specific message in a prior run
+        return
+    
+    user_state["last_msg_id"] = msg_id
+    # ---------------------------
+
+    logger.info(f"👤 User {sender_username} is in state: {user_state['state']} (Processing new msg: {msg_id})")
     
     msg_clean = text.strip().upper()
     agent = CivicAIAgent()
@@ -269,8 +278,8 @@ async def run_dm_listener():
             
             # Check if processed (using user_states timestamp or similar is complex, so let's check current turn)
             # For simplicity in this free setup, we rely on state transitions
-            logger.info(f"📥 Processing message from {sender_name}: {text[:50]}...")
-            await process_dm_state(sender_id, sender_name, text, history, supabase)
+            # logger.info(f"📥 Found message from {sender_name}: {text[:50]}...")
+            await process_dm_state(sender_id, sender_name, text, msg_id, history, supabase)
 
     logger.info("🏁 DM processing complete.")
 
