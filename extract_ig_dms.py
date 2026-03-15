@@ -264,22 +264,38 @@ async def run_dm_listener():
         msg_url = f"https://graph.facebook.com/v19.0/{conv_id}/messages?fields=message,from,created_time,id&access_token={PAGE_ACCESS_TOKEN}"
         messages = requests.get(msg_url).json().get("data", [])
         
-        # Reverse to process oldest first (chronological)
-        for msg in reversed(messages):
-            msg_id = msg.get("id")
-            sender_id = msg.get("from", {}).get("id")
-            sender_name = msg.get("from", {}).get("username", "Unknown")
-            text = msg.get("message", "")
+        if not messages:
+            continue
             
-            # Skip if message is from the Page/Bot itself
-            is_self = (sender_id == page_id or (insta_id and sender_id == insta_id))
-            if not sender_id or not text or is_self:
+        # --- LATEST MESSAGE ONLY STRATEGY ---
+        # Graph API returns NEWEST first. We only process the absolute latest message
+        # to prevent "batch rushing" through old state transitions.
+        msg = messages[0]
+        msg_id = msg.get("id")
+        sender_id = msg.get("from", {}).get("id")
+        sender_name = msg.get("from", {}).get("username", "Unknown")
+        text = msg.get("message", "")
+        created_at = msg.get("created_time") # e.g. "2026-03-14T21:34:17+0000"
+        
+        # Skip if message is from the Page/Bot itself
+        is_self = (sender_id == page_id or (insta_id and sender_id == insta_id))
+        if not sender_id or not text or is_self:
+            continue
+            
+        # Freshness Check: Skip if message is older than 20 minutes (prevents bot from waking up and spamming old history)
+        from datetime import datetime, timezone, timedelta
+        try:
+            # Parse ISO 8601 with weird +0000 format
+            clean_time = created_at.replace("+0000", "+00:00")
+            msg_time = datetime.fromisoformat(clean_time)
+            if datetime.now(timezone.utc) - msg_time > timedelta(minutes=20):
+                # logger.info(f"⏭️ Skipping stale message from {sender_name} (Sent {created_at})")
                 continue
-            
-            # Check if processed (using user_states timestamp or similar is complex, so let's check current turn)
-            # For simplicity in this free setup, we rely on state transitions
-            # logger.info(f"📥 Found message from {sender_name}: {text[:50]}...")
-            await process_dm_state(sender_id, sender_name, text, msg_id, history, supabase)
+        except Exception as e:
+            logger.warning(f"Could not parse timestamp {created_at}: {e}")
+
+        # Process the single latest message
+        await process_dm_state(sender_id, sender_name, text, msg_id, history, supabase)
 
     logger.info("🏁 DM processing complete.")
 
