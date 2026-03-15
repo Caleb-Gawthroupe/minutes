@@ -188,11 +188,35 @@ async def process_dm_state(sender_id, sender_username, text, history, supabase):
 
 async def run_dm_listener():
     from supabase import create_client, Client
+    import socket
+    from urllib.parse import urlparse
     
     if not SUPABASE_URL or not SUPABASE_KEY:
         logger.error("❌ SUPABASE_URL or SUPABASE_SERVICE_KEY missing.")
         return
         
+    # --- CONNECTIVITY DIAGNOSTIC ---
+    try:
+        parsed = urlparse(SUPABASE_URL)
+        hostname = parsed.hostname
+        logger.info(f"🔍 Diagnostic: Testing connection to {hostname}...")
+        
+        # 1. DNS Check
+        try:
+            ip = socket.gethostbyname(hostname)
+            logger.info(f"✅ DNS Resolved: {hostname} -> {ip}")
+        except socket.gaierror:
+            logger.error(f"❌ DNS Error: Could not resolve '{hostname}'. Your SUPABASE_URL might be wrong.")
+            return
+
+        # 2. Basic Reachability
+        res = requests.get(SUPABASE_URL, timeout=10)
+        logger.info(f"✅ HTTP Reachability: {SUPABASE_URL} returned {res.status_code}")
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Diagnostic Warning: Basic connectivity test failed: {e}")
+    # ------------------------------
+
     logger.info(f"Connecting to Supabase at {SUPABASE_URL[:15]}...")
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
