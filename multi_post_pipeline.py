@@ -109,61 +109,19 @@ async def process_single_topic(item, vector_store, ai_agent, renderer, uploader,
     
     return False
 
-from datetime import datetime, timedelta
-
-async def fetch_items_for_window(scraper, from_ms, to_ms):
-    """Local helper to fetch items for a specific date window without changing tmmis.py."""
-    from playwright.async_api import async_playwright
-    async with async_playwright() as p:
-        # Re-using the handshake logic locally to support date filtering
-        is_headless = os.getenv("HEADLESS", "false").lower() == "true"
-        browser = await p.chromium.launch(headless=is_headless, args=["--no-sandbox"])
-        context = await browser.new_context(user_agent="Mozilla/5.0...")
-        page = await context.new_page()
-        
-        try:
-            await page.goto(scraper.BASE_URL, wait_until="networkidle")
-            await asyncio.sleep(2)
-            cookies = await context.cookies()
-            xsrf = next((c['value'] for c in cookies if c['name'] == 'XSRF-TOKEN'), None)
-            
-            data = await page.evaluate(f"""
-                async (args) => {{
-                    const res = await fetch(args.url, {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json', 'x-xsrf-token': args.token }},
-                        body: JSON.stringify({{
-                            includeTitle: true, includeSummary: true, includeRecommendations: true, 
-                            includeDecisions: true, meetingFromDate: args.from_date, meetingToDate: args.to_date, word: ""
-                        }})
-                    }});
-                    return res.json();
-                }}
-            """, {"url": scraper.SEARCH_API, "token": xsrf or "", "from_date": from_ms, "to_date": to_ms})
-            
-            results = data.get('Records', [])
-            items = []
-            from scraper.models import AgendaItem
-            for item in results:
-                items.append(AgendaItem(
-                    item_number=item.get("reference", "Unknown"),
-                    title=item.get("agendaItemTitle", ""),
-                    status=item.get("itemStatus", "Proposed"),
-                    summary=item.get("agendaItemSummary"),
-                    recommendations=item.get("agendaItemRecommendation"),
-                    source_meeting_url=f"https://secure.toronto.ca/council/agenda-item.do?item={item.get('reference')}",
-                    pdf_links=[] # Skipping PDFs for historical speed
-                ))
-            return items
-        finally:
-            await browser.close()
-
 async def run_multi_post_pipeline():
     load_dotenv()
-    logger.info("🚀 Starting Weekly Historical Pipeline...")
+    logger.info("🚀 Starting Multi-Post Batch Pipeline (Latest Items)...")
 
-    # Initialize shared components
-    scraper = TMMISScraper()
+    # 1. SCRAPE LATEST
+    tmmis = TMMISScraper(download_dir="downloads/tmmis")
+    items = await tmmis.fetch_agenda_items_async("") 
+    
+    if not items:
+        logger.error("❌ No items found.")
+        return
+
+    # 2. INITIALIZE SHARED COMPONENTS
     ai_agent = CivicAIAgent()
     renderer = SocialCardRenderer()
     uploader = ImgBBUploader()
@@ -172,47 +130,36 @@ async def run_multi_post_pipeline():
     
     # Supabase setup
     from supabase import create_client, Client
-    sb: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
+    sb_url = os.getenv("SUPABASE_URL")
+    sb_key = os.getenv("SUPABASE_SERVICE_KEY")
+    sb: Client = create_client(sb_url, sb_key)
 
-    # 1. GENERATE 5 WEEKLY WINDOWS
-    now = datetime.now()
-    selected_items = []
+    # 3. INGEST ALL INTO VECTOR STORE
+    total_new = 0
+    for item in items:
+        text = f"{item.summary or ''} {item.recommendations or ''} {item.parsed_pdf_text or ''}"
+        if text.strip():
+            chunks = chunk_document(text, metadata={"source": item.item_number})
+            total_new += vector_store.ingest(chunks)
+    logger.info(f"🗄️ Ingested {total_new} new chunks for context.")
+
+    # 4. SELECT TOP 5
+    top_items = select_top_topic(items, top_n=5)
     
-    for i in range(5):
-        # Window: [7*i days ago - 3 days, 7*i days ago + 3 days]
-        center_date = now - timedelta(weeks=i)
-        start_date = center_date - timedelta(days=3)
-        end_date = center_date + timedelta(days=3)
-        
-        from_ms = int(start_date.timestamp() * 1000)
-        to_ms = int(end_date.timestamp() * 1000)
-        
-        logger.info(f"📅 Fetching items for week {i} ({start_date.date()} to {end_date.date()})...")
-        items = await fetch_items_for_window(scraper, from_ms, to_ms)
-        
-        if items:
-            top = select_top_topic(items, top_n=1)
-            if top:
-                selected_items.append(top[0])
-                logger.info(f"✅ Selected: {top[0].title[:50]}...")
-        else:
-            logger.warning(f"⚠️ No items found for window {i}")
-
-    # 2. PROCESS THEM
-    for i, item in enumerate(selected_items):
+    # 5. LOOP AND PROCESS
+    for i, item in enumerate(top_items):
         if i > 0:
             logger.info("⏳ Waiting 60s for rate-limiting...")
             await asyncio.sleep(60)
             
-        # Ingest for RAG context
-        text = f"{item.summary or ''} {item.recommendations or ''}"
-        vector_store.ingest(chunk_document(text, metadata={"source": item.item_number}))
-
         success = await process_single_topic(
             item, vector_store, ai_agent, renderer, uploader, sourcer, {}, ""
         )
+        
         if success:
-            logger.info(f"🎊 Post {i+1}/5 finished!")
+            logger.info(f"✅ Post {i+1}/{len(top_items)} successful.")
+        else:
+            logger.error(f"❌ Post {i+1}/{len(top_items)} failed.")
 
 if __name__ == "__main__":
     asyncio.run(run_multi_post_pipeline())
