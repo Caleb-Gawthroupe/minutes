@@ -108,24 +108,20 @@ def save_petition(post_uid, name, postal_code):
         logger.error(f"❌ Supabase Error while signing petition: {e}")
         return False
 
-async def process_dm_state(sender_id, sender_username, text, msg_id, history, supabase):
+async def process_dm_state(sender_id, sender_username, text, msg_id, history, supabase, user_state):
     """Processes a single DM based on the user's current conversation state in Supabase."""
     from social.instagram import InstagramClient
     
-    # 1. Fetch current state from Supabase
-    state_res = supabase.table("user_states").select("state_json").eq("sender_id", sender_id).execute()
-    user_state = state_res.data[0]["state_json"] if state_res.data else {"state": "INIT", "last_msg_id": None}
-    
-    # --- DEDUPLICATION LOGIC ---
-    last_id = user_state.get("last_msg_id")
-    if last_id == msg_id:
-        # We've already handled this specific message in a prior run
-        return
-    
+    # 1. Update bookmark IMMEDIATELY to prevent double-processing if we crash/retry
     user_state["last_msg_id"] = msg_id
-    # ---------------------------
+    supabase.table("user_states").upsert({
+        "sender_id": sender_id,
+        "username": sender_username,
+        "state_json": user_state,
+        "updated_at": "now()"
+    }).execute()
 
-    logger.info(f"👤 User {sender_username} is in state: {user_state['state']} (Processing new msg: {msg_id})")
+    logger.info(f"👤 User {sender_username} (State: {user_state['state']}) -> Processing: {text[:30]}")
     
     msg_clean = text.strip().upper()
     agent = CivicAIAgent()
@@ -189,7 +185,7 @@ async def process_dm_state(sender_id, sender_username, text, msg_id, history, su
             msg_retry = "Invalid format. Please reply with exactly: 'Name PostalCode'."
             ig_client.send_dm_reply(sender_id, msg_retry)
             
-    # Save the updated state back to Supabase
+    # Final save to ensure state transitions (like AWAIT -> INIT) are persisted
     supabase.table("user_states").upsert({
         "sender_id": sender_id,
         "username": sender_username,
@@ -262,37 +258,51 @@ async def run_dm_listener():
     for conv in conversations:
         conv_id = conv["id"]
         msg_url = f"https://graph.facebook.com/v19.0/{conv_id}/messages?fields=message,from,created_time,id&access_token={PAGE_ACCESS_TOKEN}"
-        messages = requests.get(msg_url).json().get("data", [])
+        resp = requests.get(msg_url).json()
+        messages = resp.get("data", [])
         
         if not messages:
             continue
-            
-        # --- MULTI-MESSAGE FRESHNESS STRATEGY ---
-        # Process unread messages oldest first (reversed) so state transitions work correctly.
-        for msg in reversed(messages):
-            msg_id = msg.get("id")
-            sender_id = msg.get("from", {}).get("id")
-            sender_name = msg.get("from", {}).get("username", "Unknown")
-            text = msg.get("message", "")
-            created_at = msg.get("created_time")
-            
-            # Skip if message is from the Page/Bot itself
-            is_self = (sender_id == page_id or (insta_id and sender_id == insta_id))
-            if not sender_id or not text or is_self:
-                continue
-                
-            # Freshness Check: Skip if message is older than 20 minutes
-            from datetime import datetime, timezone, timedelta
-            try:
-                clean_time = created_at.replace("+0000", "+00:00")
-                msg_time = datetime.fromisoformat(clean_time)
-                if datetime.now(timezone.utc) - msg_time > timedelta(minutes=20):
-                    continue
-            except Exception:
-                pass
 
-            # Process sequentially (execute() is sync, so it waits for state commit)
-            await process_dm_state(sender_id, sender_name, text, msg_id, history, supabase)
+        # 4. Get User Info from the newest message (most likely to have it)
+        sample_msg = messages[0]
+        sender_id = sample_msg.get("from", {}).get("id")
+        sender_name = sample_msg.get("from", {}).get("username", "Unknown")
+        
+        # Skip if conversation is with the Page/Bot itself
+        is_self = (sender_id == page_id or (insta_id and sender_id == insta_id))
+        if is_self: continue
+
+        # 5. Fetch Bookmark from Supabase
+        state_res = supabase.table("user_states").select("state_json").eq("sender_id", sender_id).execute()
+        user_state = state_res.data[0]["state_json"] if state_res.data else {"state": "INIT", "last_msg_id": None}
+        last_id = user_state.get("last_msg_id")
+
+        # 6. Find New Messages
+        new_messages = []
+        if not last_id:
+            # NEW USER: Only process the absolute latest message to avoid flooding
+            new_messages = [messages[0]]
+        else:
+            # RETURNING USER: Find everything after the bookmark
+            for m in messages:
+                if m.get("id") == last_id:
+                    break
+                new_messages.append(m)
+        
+        # 7. Process in Order (Oldest First)
+        if new_messages:
+            logger.info(f"📥 Found {len(new_messages)} new message(s) from {sender_name}")
+            for m in reversed(new_messages):
+                text = m.get("message", "")
+                msg_id = m.get("id")
+                created_at = m.get("created_time")
+                
+                # Double-check sender (some convs are group!)
+                m_sender_id = m.get("from", {}).get("id")
+                if m_sender_id != sender_id or not text: continue
+
+                await process_dm_state(sender_id, sender_name, text, msg_id, history, supabase, user_state)
 
     logger.info("🏁 DM processing complete.")
 
