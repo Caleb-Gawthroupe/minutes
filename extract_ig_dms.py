@@ -21,7 +21,9 @@ load_dotenv()
 
 PAGE_ACCESS_TOKEN = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
 SMTP_USER = os.getenv("CIVIC_EMAIL", "minutesproject.dev@gmail.com")
-SMTP_PASS = os.getenv("EMAIL_APP_PASSWORD") or os.getenv("SMTP_PASSWORD") or os.getenv("CIVIC_PASS")
+SMTP_PASS = os.getenv("EMAIL_APP_PASSWORD") or os.getenv("SMTP_PASSWORD")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 TARGET_EMAIL = "creativearush@gmail.com"
 
 # File paths (Legacy - will fallback to Supabase)
