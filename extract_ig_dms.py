@@ -116,6 +116,8 @@ async def process_dm_state(sender_id, sender_username, text, history, supabase):
     state_res = supabase.table("user_states").select("state_json").eq("sender_id", sender_id).execute()
     user_state = state_res.data[0]["state_json"] if state_res.data else {"state": "INIT"}
     
+    logger.info(f"👤 User {sender_username} is in state: {user_state['state']}")
+    
     msg_clean = text.strip().upper()
     agent = CivicAIAgent()
     ig_client = InstagramClient()
@@ -130,7 +132,7 @@ async def process_dm_state(sender_id, sender_username, text, history, supabase):
                 msg = f"Thanks for your interest in {uid}: {topic_title}!\n\nReply with 'EMAIL' to draft a professional email to the representative, or 'PETITION' to sign the petition."
                 logger.info(f"MATCH: {sender_username} started workflow for {uid}")
                 ig_client.send_dm_reply(sender_id, msg)
-                return
+                # No return here! Fall through to save state.
 
     elif user_state["state"] == "AWAIT_ACTION":
         if "EMAIL" in msg_clean:
