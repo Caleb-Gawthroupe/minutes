@@ -280,27 +280,51 @@ async def run_dm_listener():
 
         # 6. Find New Messages
         new_messages = []
-        if not last_id:
-            # NEW USER: Only process the absolute latest message to avoid flooding
-            new_messages = [messages[0]]
-        else:
-            # RETURNING USER: Find everything after the bookmark
+        found_bookmark = False
+        if last_id:
             for m in messages:
                 if m.get("id") == last_id:
+                    found_bookmark = True
                     break
                 new_messages.append(m)
+            
+            if not found_bookmark:
+                # The bookmark fell off the list OR hasn't been set.
+                # To be safe, we only process the absolute latest message.
+                logger.info(f"⚠️ Bookmark {last_id} NOT found for {sender_name} in recent history. Jumping to present (processing only latest msg).")
+                new_messages = [messages[0]]
+        else:
+            # BRAND NEW USER: Just process the latest message.
+            logger.info(f"🆕 New user detected: {sender_name}. Processing only latest message.")
+            new_messages = [messages[0]]
         
         # 7. Process in Order (Oldest First)
         if new_messages:
-            logger.info(f"📥 Found {len(new_messages)} new message(s) from {sender_name}")
+            count = len(new_messages)
+            if count > 1:
+                logger.info(f"📥 Found {count} new message(s) from {sender_name}")
+            
             for m in reversed(new_messages):
                 text = m.get("message", "")
                 msg_id = m.get("id")
                 created_at = m.get("created_time")
                 
+                if not text: continue
+                
                 # Double-check sender (some convs are group!)
                 m_sender_id = m.get("from", {}).get("id")
-                if m_sender_id != sender_id or not text: continue
+                if m_sender_id != sender_id: continue
+
+                # Freshness Check: Skip if message is older than 30 minutes
+                # This prevents "re-processing" loops if everything else fails
+                from datetime import datetime, timezone, timedelta
+                try:
+                    clean_time = created_at.replace("+0000", "+00:00")
+                    msg_time = datetime.fromisoformat(clean_time)
+                    if datetime.now(timezone.utc) - msg_time > timedelta(minutes=30):
+                        continue
+                except Exception:
+                    pass
 
                 await process_dm_state(sender_id, sender_name, text, msg_id, history, supabase, user_state)
 

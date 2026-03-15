@@ -158,6 +158,8 @@ def post_carousel_to_instagram(access_token, ig_user_id, image_urls, caption):
         result = resp.json()
     except requests.exceptions.RequestException as e:
         print(f"Failed to publish carousel: {e}")
+        if hasattr(e, 'response') and e.response is not None and e.response.text:
+            print(f"Error details: {e.response.text}")
         return
 
     if 'id' in result:
