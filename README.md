@@ -1,125 +1,93 @@
-# Toronto Minutes — Civic Automation Pipeline
+# 🏙️ CivicClaw: Toronto Minutes Automation
+**Transforming City Hall complexity into high-impact public awareness.**
 
-Toronto Minutes is an agentic tool designed to bridge the gap between complex municipal government documents and public awareness. It automatically scrapes Toronto City Council meetings, bylaws, and reports, then uses RAG-enhanced AI to generate high-impact social media carousels.
-
----
-
-## 🚀 Getting Started
-
-### 1. Prerequisites
-- **Python 3.10+**
-- **Node.js** (required for Playwright's browser engine)
-- **API Keys**:
-  - `OPENROUTER_API_KEY`: For AI generation (Ollama/OpenAI compatible).
-  - `INSTAGRAM_ACCESS_TOKEN` & `INSTAGRAM_USER_ID`: For automated posting.
-  - `IMGBB_API_KEY` (Optional): Alternative image hosting.
-  - `PEXELS_API_KEY` (Optional): For high-quality background sourcing.
-
-### 2. Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/Caleb-Gawthroupe/minutes.git
-   cd minutes
-   ```
-
-2. **Install Python dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Install Playwright browsers**:
-   The pipeline uses headless Chromium for scraping PDFs and rendering graphics.
-   ```bash
-   playwright install chromium
-   ```
-
-4. **Setup Environment**:
-   Create a `.env` file in the root directory:
-   ```env
-   OPENROUTER_API_KEY=your_key_here
-   OPENROUTER_MODEL=openrouter/hunter-alpha
-   INSTAGRAM_ACCESS_TOKEN=your_ig_token
-   INSTAGRAM_USER_ID=your_ig_id
-   IMGBB_API_KEY=your_imgbb_key
-   PEXELS_API_KEY=your_pexels_key
-   ```
+CivicClaw is a modular, agentic AI ecosystem that scrapes Toronto municipal data, processes it via RAG-enhanced intelligence, and automates public engagement through Instagram carousels and an interactive DM responder.
 
 ---
 
-## 🏃 Running the Pipeline
+## 🛠️ Technology Stack
 
-To run the full end-to-end pipeline once:
+### **Core Frameworks & Tools**
+- **Python 3.12**: Core transformation and orchestration logic.
+- **Supabase**: Cloud-native "brain" for post history, conversation state, and petition storage.
+- **FastAPI**: Backend infrastructure for petition handling and webhooks.
+- **Playwright**: Headless browser automation for handshaking TMMIS and rendering graphics.
 
-```bash
-python3 single_post_pipeline.py
+### **Libraries**
+- **AI/LLM**: `langchain`, `langchain-openai` (via OpenRouter), `openai`.
+- **Data & Scraping**: `requests`, `beautifulsoup4`, `PyMuPDF` (PDF parsing), `pypdf`.
+- **Database**: `supabase`, `postgrest`, `chromadb` (Local Vector Store).
+- **Social & Media**: `ImgBB` (Image hosting), Facebook Graph API (Instagram posting).
+- **System**: `python-dotenv`, `uvicorn`, `playwright`.
+
+---
+
+## 🧠 Architectural Logic
+
+### **1. The Data Pipeline (`multi_post_pipeline.py`)**
+- **Handshaking**: Uses Playwright to mimic browser behavior and bypass WAF/XSRF checks on Toronto's TMMIS.
+- **Extraction**: Puls structured data from the undocumented REST API and parses dense staff report PDFs using `PyMuPDF`.
+- **RAG (Retrieval-Augmented Generation)**: Chunks documents and stores them in a local **ChromaDB** to provide the AI with context.
+- **Scoring**: Ranks topics based on "Citizen Impact" (Housing, Transit, Taxes > Internal Reports).
+
+### **2. AI & Creative Engine**
+- **Civic Agent**: Uses the `hunter-alpha` model to translate legalese into viral social copy.
+- **Renderer**: Uses HTML/CSS via Playwright to generate premium 1080x1080 slides.
+- **Social Posting**: Automates multi-image carousels directly to Instagram.
+
+### **3. The DM Agent & Cloud Sync (`extract_ig_dms.py`)**
+- **Stateful Memory**: Instead of local JSON, the bot uses **Supabase** for persistence.
+- **Unified Brain**: Your local machine (Laptop) and the GitHub Action (Cloud) share the same database.
+- **DM Resolver**: 
+    - Recognizes unique post UIDs (e.g., `APPL69`).
+    - Formats AI summaries for email delivery.
+    - Records digital petition signatures securely.
+
+---
+
+## 🚀 Setup & Installation
+
+### **1. Environment Config**
+Create a `.env` file with the following keys:
+```env
+# AI & Content
+OPENROUTER_API_KEY=...
+OPENROUTER_MODEL=openrouter/hunter-alpha
+PEXELS_API_KEY=...
+IMGBB_API_KEY=...
+
+# Social Media
+INSTAGRAM_USER_ID=...
+INSTAGRAM_ACCESS_TOKEN=...
+FACEBOOK_PAGE_ID=...
+FACEBOOK_PAGE_ACCESS_TOKEN=...
+
+# Cloud Sync (Supabase)
+SUPABASE_URL=...
+SUPABASE_SERVICE_KEY=...
+
+# Email Gateway
+CIVIC_EMAIL=...
+EMAIL_APP_PASSWORD=...
 ```
 
-### What happens?
-1. **Scraping**: Fetches the latest agenda items from Toronto TMMIS and recent bylaws.
-2. **Ingestion**: Documents are chunked and stored in a local **ChromaDB** vector store (`data/chroma_db`).
-3. **Selection**: AI identifies the most "human-centric" trending topic (e.g., Housing, Transit).
-4. **RAG Deep-Dive**: AI performs a RAG search against the vector store to find historical context and contradictions.
-5. **Creative Generation**: AI generates a caption and content for 3 specific slides:
-   - *Slide 1*: The Decision (Plain language hook).
-   - *Slide 2*: The Numbers (Hard stats).
-   - *Slide 3*: What it Means (Resident impact).
-6. **Rendering**: Uses Playwright to render premium CSS3/HTML5 social cards to `downloads/visuals/`.
-7. **Cloud Upload**: Uploads images to Catbox/ImgBB for public accessibility.
-8. **Instagram Post**: Publishes a multi-slide carousel via the Instagram Graph API.
+### **2. Database Topology**
+Run the following SQL in the Supabase editor to initialize the shared memory:
+```sql
+CREATE TABLE public.posts (uid TEXT PRIMARY KEY, title TEXT, caption TEXT, timestamp TIMESTAMPTZ);
+CREATE TABLE public.user_states (sender_id TEXT PRIMARY KEY, state_json JSONB, updated_at TIMESTAMPTZ);
+CREATE TABLE public.signatures (id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, name TEXT, postal_code TEXT, petition_tag TEXT);
+```
+
+### **3. Deployment**
+- **Local**: `PYTHONPATH=src ./venv/bin/python3 multi_post_pipeline.py`
+- **Automation**: GitHub Actions (`dm_agent.yml`) runs every 5 minutes to sweep DMs and respond to citizens.
 
 ---
 
-## ☁️ Cloud Hosting & Scheduling (Free Tier)
-
-### 1. 24/7 Automated Scheduling (GitHub Actions)
-The project includes a GitHub Actions workflow to run the pipeline automatically every day.
-
-- **Setup**:
-  1. Push your code to a **GitHub Repository**.
-  2. Go to `Settings` -> `Secrets and variables` -> `Actions`.
-  3. Add the following **Repository Secrets**:
-     - `OPENROUTER_API_KEY`
-     - `INSTAGRAM_ACCESS_TOKEN`
-     - `INSTAGRAM_USER_ID`
-     - `PEXELS_API_KEY` (optional)
-     - `IMGBB_API_KEY` (optional)
-  4. The workflow will run automatically at **9:00 AM EST** daily. You can also trigger it manually from the `Actions` tab.
-
-### 2. Remote Triggering (The "Ping")
-To trigger the GitHub workflow from your terminal, a script, or another app without opening the browser:
-
-- **Using `curl`**:
-  ```bash
-  # Replace <YOUR_TOKEN> with a GitHub Personal Access Token
-  # Replace <OWNER>/<REPO> with your GitHub details
-  curl -X POST \
-    -H "Accept: application/vnd.github+json" \
-    -H "Authorization: Bearer <YOUR_TOKEN>" \
-    https://api.github.com/repos/<OWNER>/<REPO>/dispatches \
-    -d '{"event_type": "ping-pipeline"}'
-  ```
-
-### 3. Live API Trigger (Render / Koyeb)
-You can trigger the pipeline on-demand using a simple API call. The project includes a **FastAPI** server for this purpose.
-
-- **Local Development**:
-  ```bash
-  python3 src/api_server.py
-  ```
-- **Deployment**:
-  1. Deploy the Dockerized application to **Render** or **Koyeb**.
-  2. The server will run on port `8080` (or the port specified by the `$PORT` environment variable).
-  3. **Trigger via API**: Send a POST request to your public URL:
-     ```bash
-     curl -X POST https://your-app-url.render.com/run
-     ```
-- **Note**: Render's free tier sleeps after 15 minutes of inactivity. Use a service like **Cron-job.org** to ping your `/` endpoint every 10 minutes to keep it awake if needed.
-
----
-
-## 🛠️ Troubleshooting
-
-- **ChromaDB KEYERROR**: If you see `KeyError: '_type'`, it's a version mismatch. Delete the database folder and re-run: `rm -rf data/chroma_db`.
-- **Instagram 400 Error**: Ensure your `INSTAGRAM_USER_ID` is the **Business ID**, not your personal account ID, and that your token has `instagram_basic` and `instagram_content_publish` permissions.
-- **Playwright Errors**: If running in a CI/HEADLESS environment, ensure `xvfb-run` is used as per the Dockerfile.
+## 📂 Feature Inventory
+- [x] **Multi-Post Engine**: Generates 5 distinct high-impact stories in one run.
+- [x] **Dynamic Card Rendering**: Auto-scales text and themes (Modern vs. Emergency).
+- [x] **Stateful DMs**: Remembers user conversations across deployments.
+- [x] **Petition Dashboard**: Synchronized static frontend for signature verification.
+ the Dockerfile.
