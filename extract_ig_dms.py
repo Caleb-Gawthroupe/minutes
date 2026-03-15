@@ -21,9 +21,9 @@ load_dotenv()
 
 PAGE_ACCESS_TOKEN = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
 SMTP_USER = os.getenv("CIVIC_EMAIL", "minutesproject.dev@gmail.com")
-SMTP_PASS = os.getenv("EMAIL_APP_PASSWORD") or os.getenv("SMTP_PASSWORD")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+SMTP_PASS = (os.getenv("EMAIL_APP_PASSWORD") or os.getenv("SMTP_PASSWORD") or "").strip()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().strip('"').strip("'")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip().strip('"').strip("'")
 TARGET_EMAIL = "creativearush@gmail.com"
 
 # File paths (Legacy - will fallback to Supabase)
@@ -188,14 +188,13 @@ async def process_dm_state(sender_id, sender_username, text, history, supabase):
 
 async def run_dm_listener():
     from supabase import create_client, Client
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_KEY")
     
-    if not url or not key:
+    if not SUPABASE_URL or not SUPABASE_KEY:
         logger.error("❌ SUPABASE_URL or SUPABASE_SERVICE_KEY missing.")
         return
         
-    supabase: Client = create_client(url, key)
+    logger.info(f"Connecting to Supabase at {SUPABASE_URL[:15]}...")
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     if not PAGE_ACCESS_TOKEN:
         logger.error("❌ Missing FACEBOOK_PAGE_ACCESS_TOKEN in .env")
