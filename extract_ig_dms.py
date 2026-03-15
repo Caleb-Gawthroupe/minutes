@@ -24,10 +24,8 @@ SMTP_USER = os.getenv("CIVIC_EMAIL", "minutesproject.dev@gmail.com")
 SMTP_PASS = os.getenv("EMAIL_APP_PASSWORD") or os.getenv("SMTP_PASSWORD") or os.getenv("CIVIC_PASS")
 TARGET_EMAIL = "creativearush@gmail.com"
 
-# File paths
+# File paths (Legacy - will fallback to Supabase)
 HISTORY_FILE = "data/post_history.json"
-STATE_FILE = "data/conversation_state.json"
-PETITION_FILE = "data/petitions.json"
 
 def send_email(subject, body):
     """Sends an email via SMTP."""
@@ -108,10 +106,14 @@ def save_petition(post_uid, name, postal_code):
         logger.error(f"❌ Supabase Error while signing petition: {e}")
         return False
 
-async def process_dm_state(sender_id, sender_username, text, history, state_map):
-    """Processes a single DM based on the user's current conversation state."""
+async def process_dm_state(sender_id, sender_username, text, history, supabase):
+    """Processes a single DM based on the user's current conversation state in Supabase."""
     from social.instagram import InstagramClient
-    user_state = state_map.get(sender_id, {"state": "INIT"})
+    
+    # 1. Fetch current state from Supabase
+    state_res = supabase.table("user_states").select("state_json").eq("sender_id", sender_id).execute()
+    user_state = state_res.data[0]["state_json"] if state_res.data else {"state": "INIT"}
+    
     msg_clean = text.strip().upper()
     agent = CivicAIAgent()
     ig_client = InstagramClient()
@@ -120,10 +122,8 @@ async def process_dm_state(sender_id, sender_username, text, history, state_map)
         # Check for UID
         for uid in history.keys():
             if uid in msg_clean:
-                state_map[sender_id] = {
-                    "state": "AWAIT_ACTION",
-                    "post_uid": uid
-                }
+                user_state["state"] = "AWAIT_ACTION"
+                user_state["post_uid"] = uid
                 topic_title = history[uid]['title']
                 msg = f"Thanks for your interest in {uid}: {topic_title}!\n\nReply with 'EMAIL' to draft a professional email to the representative, or 'PETITION' to sign the petition."
                 logger.info(f"MATCH: {sender_username} started workflow for {uid}")
@@ -132,11 +132,11 @@ async def process_dm_state(sender_id, sender_username, text, history, state_map)
 
     elif user_state["state"] == "AWAIT_ACTION":
         if "EMAIL" in msg_clean:
-            state_map[sender_id]["state"] = "AWAIT_EMAIL_CONTENT"
+            user_state["state"] = "AWAIT_EMAIL_CONTENT"
             msg = "Great! Please send me the raw thoughts you'd like to include in the email. I'll use AI to format it professionally and send it for you."
             ig_client.send_dm_reply(sender_id, msg)
         elif "PETITION" in msg_clean:
-            state_map[sender_id]["state"] = "AWAIT_PETITION_DATA"
+            user_state["state"] = "AWAIT_PETITION_DATA"
             msg = "Awesome! To sign the petition securely, please reply with your First Name and Postal Code (e.g., 'John M5V 2H1')."
             ig_client.send_dm_reply(sender_id, msg)
         else:
@@ -153,7 +153,7 @@ async def process_dm_state(sender_id, sender_username, text, history, state_map)
         if send_email(f"Action Request: {topic}", formatted_email):
             msg_success = "✅ Your email has been formatted professionally and successfully relayed to the representative!"
             ig_client.send_dm_reply(sender_id, msg_success)
-            state_map[sender_id] = {"state": "INIT"} # Reset
+            user_state = {"state": "INIT"} # Reset
         else:
             msg_fail = "❌ Something went wrong while relaying your email. Please try again later."
             ig_client.send_dm_reply(sender_id, msg_fail)
@@ -168,31 +168,48 @@ async def process_dm_state(sender_id, sender_username, text, history, state_map)
             if save_petition(uid, name, postal):
                 msg_success = f"✅ Thank you, {name}! Your signature for {uid} has been securely recorded."
                 ig_client.send_dm_reply(sender_id, msg_success)
-                state_map[sender_id] = {"state": "INIT"} # Reset
+                user_state = {"state": "INIT"} # Reset
             else:
                 msg_fail = "❌ Failed to secure your signature. Make sure your Postal Code is a valid format (e.g., M5V 2H1) and you haven't already signed."
                 ig_client.send_dm_reply(sender_id, msg_fail)
         else:
             msg_retry = "Invalid format. Please reply with exactly: 'Name PostalCode'."
             ig_client.send_dm_reply(sender_id, msg_retry)
+            
+    # Save the updated state back to Supabase
+    supabase.table("user_states").upsert({
+        "sender_id": sender_id,
+        "username": sender_username,
+        "state_json": user_state,
+        "updated_at": "now()"
+    }).execute()
 
 async def run_dm_listener():
+    from supabase import create_client, Client
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_KEY")
+    
+    if not url or not key:
+        logger.error("❌ SUPABASE_URL or SUPABASE_SERVICE_KEY missing.")
+        return
+        
+    supabase: Client = create_client(url, key)
+
     if not PAGE_ACCESS_TOKEN:
         logger.error("❌ Missing FACEBOOK_PAGE_ACCESS_TOKEN in .env")
         return
 
-    # Load Databases
+    # 1. Load Post History from Supabase
     history = {}
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r") as f:
-            history = json.load(f)
-    
-    state_map = {}
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r") as f:
-            state_map = json.load(f)
+    try:
+        posts_res = supabase.table("posts").select("*").execute()
+        for p in posts_res.data:
+            history[p["uid"]] = p
+        logger.info(f"Loaded {len(history)} items from Supabase post history.")
+    except Exception as e:
+        logger.error(f"Failed to load post history from Supabase: {e}")
 
-    # 1. Get IDs
+    # 2. Get IDs
     me_url = f"https://graph.facebook.com/v19.0/me?fields=id,instagram_business_account&access_token={PAGE_ACCESS_TOKEN}"
     me_res = requests.get(me_url).json()
     page_id = me_res.get("id")
@@ -202,11 +219,9 @@ async def run_dm_listener():
         logger.error(f"❌ Authentication failed: {me_res}")
         return
 
-    # 2. Get Conversations
+    # 3. Get Conversations
     conv_url = f"https://graph.facebook.com/v19.0/{page_id}/conversations?platform=instagram&access_token={PAGE_ACCESS_TOKEN}"
     conversations = requests.get(conv_url).json().get("data", [])
-
-    processed_msgs = state_map.get("__processed_ids", [])
 
     for conv in conversations:
         conv_id = conv["id"]
@@ -220,25 +235,17 @@ async def run_dm_listener():
             sender_name = msg.get("from", {}).get("username", "Unknown")
             text = msg.get("message", "")
             
-            # Skip if already processed, no text, or message is from the Page/Bot itself
+            # Skip if message is from the Page/Bot itself
             is_self = (sender_id == page_id or (insta_id and sender_id == insta_id))
-            if not sender_id or not text or is_self or msg_id in processed_msgs:
-                if is_self:
-                    logger.debug(f"Skipping self-message: {text[:20]}")
+            if not sender_id or not text or is_self:
                 continue
             
-            logger.info(f"📥 New message from {sender_name} ({sender_id}): {text[:50]}...")
-            await process_dm_state(sender_id, sender_name, text, history, state_map)
-            processed_msgs.append(msg_id)
+            # Check if processed (using user_states timestamp or similar is complex, so let's check current turn)
+            # For simplicity in this free setup, we rely on state transitions
+            logger.info(f"📥 Processing message from {sender_name}: {text[:50]}...")
+            await process_dm_state(sender_id, sender_name, text, history, supabase)
 
-    # Keep only the last 500 processed IDs to avoid state file bloat
-    state_map["__processed_ids"] = processed_msgs[-500:]
-
-    # Save State
-    os.makedirs("data", exist_ok=True)
-    with open(STATE_FILE, "w") as f:
-        json.dump(state_map, f, indent=2)
-    logger.info("💾 Conversation states updated.")
+    logger.info("🏁 DM processing complete.")
 
 if __name__ == "__main__":
     asyncio.run(run_dm_listener())

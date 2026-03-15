@@ -126,31 +126,27 @@ async def run_single_post_pipeline():
     logger.info(f"✨ Generated UID: {uid}")
     logger.info(f"✨ Generated Caption (link & UID): {caption}")
 
-    # 💾 Save to Post History for DM matching
-    history_file = "data/post_history.json"
-    os.makedirs("data", exist_ok=True)
-    history = {}
-    if os.path.exists(history_file):
+    # ── 7. SAVE TO SUPABASE ──
+    from supabase import create_client, Client
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_KEY")
+    if url and key:
         try:
-            with open(history_file, "r") as f:
-                history = json.load(f)
+            sb: Client = create_client(url, key)
+            sb.table("posts").upsert({
+                "uid": uid,
+                "title": topic.title,
+                "item_number": topic.item_number,
+                "caption": caption,
+                "source_url": str(topic.source_meeting_url),
+                "timestamp": "now()"
+            }).execute()
+            logger.info(f"💾 Saved {uid} to Supabase history.")
         except Exception as e:
-            logger.warning(f"Could not load history file: {e}")
-    
-    history[uid] = {
-        "title": topic.title,
-        "item_number": topic.item_number,
-        "caption": caption,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "source_url": str(topic.source_meeting_url)
-    }
-    
-    try:
-        with open(history_file, "w") as f:
-            json.dump(history, f, indent=2)
-        logger.info(f"💾 Saved UID {uid} to history.")
-    except Exception as e:
-        logger.error(f"Failed to save history: {e}")
+            logger.error(f"Failed to save {uid} to Supabase: {e}")
+
+    # 💾 Legacy fallback to local History
+    history = {uid: {"title": topic.title, "caption": caption}}
 
     # ── 7. RENDER 3-SLIDE CAROUSEL ──
     renderer = SocialCardRenderer()
